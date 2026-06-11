@@ -40,8 +40,12 @@ class AuthController extends ChangeNotifier {
     _failedAttempts = prefs.getInt(_prefsFailed) ?? 0;
     _locked = prefs.getBool(_prefsLocked) ?? false;
 
-    // firebase_auth tự lưu phiên trên web -> chờ trạng thái ban đầu.
-    _user = await _auth.authStateChanges().first;
+    // Lấy phiên hiện tại NGAY (đồng bộ, không chờ mạng) để tránh treo app.
+    // `authStateChanges().first` trên web có thể không phát giá trị kịp khiến
+    // main() chờ mãi, không tới runApp() -> màn hình trắng.
+    _user = _auth.currentUser;
+    // Lắng nghe thay đổi: khi Firebase khôi phục/đổi phiên thì cập nhật UI.
+    // Router dùng refreshListenable nên sẽ tự điều hướng lại khi user đổi.
     _auth.authStateChanges().listen((user) {
       _user = user;
       notifyListeners();
