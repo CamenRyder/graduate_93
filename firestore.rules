@@ -1,0 +1,16 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ĐỌC: công khai — để trang đếm ngược (khách) tra cứu theo code + email.
+    //   ⚠️ Nghĩa là bất kỳ ai cũng đọc được dữ liệu user. Nếu cần riêng tư,
+    //   nên chuyển việc tra cứu sang Cloud Function (server-side).
+    // GHI: chỉ admin đã đăng nhập đúng email mới được thêm/sửa/xóa.
+    match /{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && request.auth.token.email == 'mhieusz.23.dkc@gmail.com';
+    }
+  }
+}
