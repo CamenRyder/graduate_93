@@ -28,18 +28,26 @@ class FirestoreService {
         );
   }
 
-  /// Tra cứu user theo code (= field `ID`, số 4 chữ số) và email.
-  /// Trả về user nếu tìm thấy đúng cả code lẫn email, ngược lại null.
-  Future<AppUser?> findByCode(int code, String email) async {
-    final snap = await _usersRef.where('ID', isEqualTo: code).get();
-    final target = email.trim().toLowerCase();
-    for (final doc in snap.docs) {
-      final user = doc.data();
-      if (user.email.trim().toLowerCase() == target) {
-        return user;
-      }
-    }
-    return null;
+  /// Tra cứu user CHỈ theo code (= field `ID`, số 4 chữ số).
+  /// Trả về user đầu tiên khớp mã, hoặc null nếu không có mã nào trùng.
+  Future<AppUser?> findByCodeOnly(int code) async {
+    final snap = await _usersRef.where('ID', isEqualTo: code).limit(1).get();
+    if (snap.docs.isEmpty) return null;
+    return snap.docs.first.data();
+  }
+
+  /// Khách kích hoạt lần đầu: lưu số điện thoại và bật `isActive = true`.
+  /// Chỉ ghi đúng 3 field (Phone, isActive, time_updated) để khớp với
+  /// Firestore rules cho phép khách (chưa đăng nhập) cập nhật.
+  Future<void> activateGuest({
+    required String docId,
+    required String phone,
+  }) {
+    return _rawUsersRef.doc(docId).update({
+      'Phone': phone,
+      'isActive': true,
+      'time_updated': FieldValue.serverTimestamp(),
+    });
   }
 
   /// Thêm 1 user mới vào CUỐI danh sách (index = max + 1).

@@ -3,14 +3,35 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ĐỌC: công khai — để trang đếm ngược (khách) tra cứu theo code + email.
-    //   ⚠️ Nghĩa là bất kỳ ai cũng đọc được dữ liệu user. Nếu cần riêng tư,
-    //   nên chuyển việc tra cứu sang Cloud Function (server-side).
-    // GHI: chỉ admin đã đăng nhập đúng email mới được thêm/sửa/xóa.
+    // Admin đã đăng nhập đúng email mới được toàn quyền ghi.
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'mhieusz.23.dkc@gmail.com';
+    }
+
+    // Khách (CHƯA đăng nhập) chỉ được phép cập nhật ĐÚNG 3 field:
+    //   Phone, isActive, time_updated — và bắt buộc đặt isActive = true.
+    // Dùng cho luồng kích hoạt lần đầu ở trang đếm ngược (nhập số điện thoại).
+    function isGuestActivation() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly(['Phone', 'isActive', 'time_updated'])
+        && request.resource.data.isActive == true;
+    }
+
+    // Collection users:
+    //   ĐỌC: công khai (khách tra cứu theo mã code).
+    //   TẠO / XÓA: chỉ admin.
+    //   CẬP NHẬT: admin (mọi field) HOẶC khách (chỉ kích hoạt như trên).
+    match /users/{userId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || isGuestActivation();
+    }
+
+    // Mọi document khác: đọc công khai, ghi chỉ admin (giữ như cũ).
     match /{document=**} {
       allow read: if true;
-      allow write: if request.auth != null
-        && request.auth.token.email == 'mhieusz.23.dkc@gmail.com';
+      allow write: if isAdmin();
     }
   }
 }

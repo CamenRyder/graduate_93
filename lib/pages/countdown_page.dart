@@ -4,12 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
+import '../models/app_user.dart';
 import '../services/firestore_service.dart';
 import '../services/guest_cache.dart';
 import '../widgets/theme_toggle_button.dart';
 
-/// Trang công khai: đếm ngược đến 09:00 ngày 26/06/2026, kèm form nhập
-/// code + email để vào trang chào.
+/// Trang công khai: đếm ngược đến 09:00 ngày 26/06/2026.
+///
+/// Phía dưới là luồng nhập 2 bước:
+///   1. Nhập mã code -> tra Firestore.
+///        - Không trùng       : báo "sai mã".
+///        - Trùng & isActive   : đã đăng nhập trước đó -> sang trang chào.
+///        - Trùng & chưa active: fade sang bước nhập số điện thoại.
+///   2. Nhập số điện thoại -> ghi xuống Firestore + bật isActive -> trang chào.
 class CountdownPage extends StatefulWidget {
   const CountdownPage({super.key});
 
@@ -17,16 +24,22 @@ class CountdownPage extends StatefulWidget {
   State<CountdownPage> createState() => _CountdownPageState();
 }
 
+/// Bước hiện tại của form nhập.
+enum _Step { code, phone }
+
 class _CountdownPageState extends State<CountdownPage> {
   /// Mốc đích: 09:00 26/06/2026 (giờ máy/địa phương).
   static final DateTime _target = DateTime(2026, 6, 26, 9);
 
   final _service = FirestoreService();
   final _codeCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
 
   Timer? _timer;
   Duration _remaining = Duration.zero;
+
+  _Step _step = _Step.code;
+  AppUser? _matched; // user tìm được theo mã (chờ kích hoạt ở bước phone)
   bool _loading = false;
   String? _error;
 
@@ -42,7 +55,7 @@ class _CountdownPageState extends State<CountdownPage> {
   void dispose() {
     _timer?.cancel();
     _codeCtrl.dispose();
-    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
     super.dispose();
   }
 
@@ -53,23 +66,15 @@ class _CountdownPageState extends State<CountdownPage> {
 
   Future<void> _loadCache() async {
     final cached = await GuestCache.load();
-    if (!mounted) return;
-    setState(() {
-      if (cached.code != null) _codeCtrl.text = cached.code.toString();
-      if (cached.email != null) _emailCtrl.text = cached.email!;
-    });
+    if (!mounted || cached.code == null) return;
+    setState(() => _codeCtrl.text = cached.code.toString());
   }
 
-  Future<void> _submit() async {
+  /// Bước 1: xác thực mã code.
+  Future<void> _submitCode() async {
     final code = int.tryParse(_codeCtrl.text.trim());
-    final email = _emailCtrl.text.trim();
-
-    if (_codeCtrl.text.trim().isEmpty || email.isEmpty) {
-      setState(() => _error = 'Vui lòng nhập đủ code và email');
-      return;
-    }
     if (code == null) {
-      setState(() => _error = 'Code phải là số');
+      setState(() => _error = 'Vui lòng nhập mã code');
       return;
     }
 
@@ -80,15 +85,66 @@ class _CountdownPageState extends State<CountdownPage> {
     });
 
     try {
-      final user = await _service.findByCode(code, email);
+      final user = await _service.findByCodeOnly(code);
       if (!mounted) return;
+
       if (user == null) {
         setState(() {
           _loading = false;
-          _error = 'Code hoặc email không đúng';
+          _error = 'Mã code không đúng, vui lòng thử lại';
         });
         return;
       }
+
+      // Đã kích hoạt trước đó -> vào thẳng trang chào.
+      if (user.isActive) {
+        await GuestCache.save(
+          code: user.userId,
+          email: user.email,
+          name: user.name,
+        );
+        if (!mounted) return;
+        router.go('/welcome');
+        return;
+      }
+
+      // Chưa active -> fade sang bước nhập số điện thoại.
+      _phoneCtrl.text = user.phone;
+      setState(() {
+        _loading = false;
+        _matched = user;
+        _step = _Step.phone;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Có lỗi xảy ra: $e';
+      });
+    }
+  }
+
+  /// Bước 2: lưu số điện thoại + bật isActive.
+  Future<void> _submitPhone() async {
+    final user = _matched;
+    final phone = _phoneCtrl.text.trim();
+    if (user == null) {
+      setState(() => _step = _Step.code);
+      return;
+    }
+    if (phone.isEmpty) {
+      setState(() => _error = 'Vui lòng nhập số điện thoại');
+      return;
+    }
+
+    final router = GoRouter.of(context);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      await _service.activateGuest(docId: user.id, phone: phone);
       await GuestCache.save(
         code: user.userId,
         email: user.email,
@@ -100,14 +156,21 @@ class _CountdownPageState extends State<CountdownPage> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Lỗi: $e';
+        _error = 'Không lưu được, vui lòng thử lại: $e';
       });
     }
   }
 
+  void _backToCode() {
+    setState(() {
+      _step = _Step.code;
+      _matched = null;
+      _error = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final d = _remaining.isNegative ? Duration.zero : _remaining;
     final finished = _remaining.isNegative;
 
     return Scaffold(
@@ -122,38 +185,46 @@ class _CountdownPageState extends State<CountdownPage> {
               ),
             ),
           ),
-          Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Đếm ngược đến sự kiện',
-                      style: Theme.of(context).textTheme.titleLarge,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '09:00 · 26/06/2026',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                    ),
-                    const SizedBox(height: 24),
-                    if (finished)
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 460),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                       Text(
-                        'Sự kiện đã bắt đầu! 🎉',
-                        style: Theme.of(context).textTheme.headlineSmall,
+                        'Đếm ngược đến sự kiện',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color:
+                                  Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
                         textAlign: TextAlign.center,
-                      )
-                    else
-                      _Countdown(duration: d),
-                    const SizedBox(height: 36),
-                    _form(),
-                  ],
+                      ),
+                      const SizedBox(height: 16),
+                      if (finished)
+                        Text(
+                          'Sự kiện đã bắt đầu! 🎉',
+                          style: Theme.of(context).textTheme.headlineMedium,
+                          textAlign: TextAlign.center,
+                        )
+                      else
+                        _Countdown(duration: _remaining),
+                      const SizedBox(height: 12),
+                      Text(
+                        '09:00 · 26/06/2026',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color:
+                                  Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 48),
+                      _stepArea(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -163,76 +234,128 @@ class _CountdownPageState extends State<CountdownPage> {
     );
   }
 
-  Widget _form() {
+  /// Khu vực nhập với hiệu ứng fade khi đổi bước.
+  Widget _stepArea() {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 350),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (child, animation) =>
+          FadeTransition(opacity: animation, child: child),
+      child: _step == _Step.code
+          ? _codeStep(key: const ValueKey('code'))
+          : _phoneStep(key: const ValueKey('phone')),
+    );
+  }
+
+  Widget _codeStep({required Key key}) {
+    return Column(
+      key: key,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: _codeCtrl,
+          keyboardType: TextInputType.number,
+          textAlign: TextAlign.center,
+          autofocus: false,
+          enabled: !_loading,
+          style: const TextStyle(fontSize: 22, letterSpacing: 4),
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(4),
+          ],
+          onSubmitted: (_) => _loading ? null : _submitCode(),
+          decoration: const InputDecoration(
+            hintText: 'Nhập mã code',
+            hintStyle: TextStyle(letterSpacing: 0),
+          ),
+        ),
+        _errorBox(),
+        const SizedBox(height: 16),
+        FilledButton(
+          onPressed: _loading ? null : _submitCode,
+          child: _loading
+              ? const _BtnSpinner()
+              : const Text('Tiếp tục'),
+        ),
+      ],
+    );
+  }
+
+  Widget _phoneStep({required Key key}) {
+    final name = (_matched?.name.isNotEmpty ?? false) ? _matched!.name : 'bạn';
+    return Column(
+      key: key,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Xin chào $name!',
+          style: Theme.of(context).textTheme.titleLarge,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Nhập số điện thoại để hoàn tất',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _phoneCtrl,
+          keyboardType: TextInputType.phone,
+          textAlign: TextAlign.center,
+          autofocus: true,
+          enabled: !_loading,
+          style: const TextStyle(fontSize: 20),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[0-9+ ]')),
+            LengthLimitingTextInputFormatter(15),
+          ],
+          onSubmitted: (_) => _loading ? null : _submitPhone(),
+          decoration: const InputDecoration(
+            hintText: 'Nhập số điện thoại',
+            prefixIcon: Icon(Icons.phone_outlined),
+          ),
+        ),
+        _errorBox(),
+        const SizedBox(height: 16),
+        FilledButton(
+          onPressed: _loading ? null : _submitPhone,
+          child: _loading ? const _BtnSpinner() : const Text('Hoàn tất'),
+        ),
+        TextButton(
+          onPressed: _loading ? null : _backToCode,
+          child: const Text('Quay lại'),
+        ),
+      ],
+    );
+  }
+
+  Widget _errorBox() {
+    if (_error == null) return const SizedBox.shrink();
     final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: colorScheme.errorContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
           children: [
-            Text(
-              'Nhập thông tin để tiếp tục',
-              style: Theme.of(context).textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _codeCtrl,
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(4),
-              ],
-              decoration: const InputDecoration(
-                labelText: 'Code (4 số)',
-                prefixIcon: Icon(Icons.tag),
+            Icon(Icons.error_outline,
+                color: colorScheme.onErrorContainer, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _error!,
+                style: TextStyle(color: colorScheme.onErrorContainer),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              onSubmitted: (_) => _loading ? null : _submit(),
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                prefixIcon: Icon(Icons.email_outlined),
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.error_outline,
-                        color: colorScheme.onErrorContainer, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _error!,
-                        style: TextStyle(color: colorScheme.onErrorContainer),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: _loading ? null : _submit,
-              child: _loading
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Tiếp tục'),
             ),
           ],
         ),
@@ -241,7 +364,21 @@ class _CountdownPageState extends State<CountdownPage> {
   }
 }
 
-/// Hiển thị countdown theo dạng dd - hh/mm/ss.
+class _BtnSpinner extends StatelessWidget {
+  const _BtnSpinner();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      width: 22,
+      height: 22,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    );
+  }
+}
+
+/// Countdown không khung, dạng "dd ngày - hh:mm:ss".
+/// Bọc trong [FittedBox] nên tự co lại vừa bề ngang trên thiết bị di động.
 class _Countdown extends StatelessWidget {
   const _Countdown({required this.duration});
 
@@ -249,65 +386,46 @@ class _Countdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     final days = duration.inDays;
     final hours = duration.inHours % 24;
     final minutes = duration.inMinutes % 60;
     final seconds = duration.inSeconds % 60;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _block(context, days, 'Ngày'),
-        _sep(context, '-'),
-        _block(context, hours, 'Giờ'),
-        _sep(context, '/'),
-        _block(context, minutes, 'Phút'),
-        _sep(context, '/'),
-        _block(context, seconds, 'Giây'),
-      ],
-    );
-  }
+    String two(int n) => n.toString().padLeft(2, '0');
+    final time = '${two(hours)}:${two(minutes)}:${two(seconds)}';
 
-  Widget _block(BuildContext context, int value, String label) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Text(
-            value.toString().padLeft(2, '0'),
-            style: TextStyle(
-              fontSize: 40,
-              fontWeight: FontWeight.bold,
-              color: colorScheme.onPrimaryContainer,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-      ],
+    final numberStyle = TextStyle(
+      fontSize: 60,
+      fontWeight: FontWeight.bold,
+      height: 1,
+      color: colorScheme.onSurface,
+      fontFeatures: const [FontFeature.tabularFigures()],
     );
-  }
+    final labelStyle = TextStyle(
+      fontSize: 24,
+      fontWeight: FontWeight.w500,
+      color: colorScheme.onSurfaceVariant,
+    );
+    final sepStyle = TextStyle(
+      fontSize: 44,
+      fontWeight: FontWeight.w300,
+      color: colorScheme.primary,
+    );
 
-  Widget _sep(BuildContext context, String symbol) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: Padding(
-        padding: const EdgeInsets.only(top: 12),
-        child: Text(
-          symbol,
-          style: TextStyle(
-            fontSize: 32,
-            fontWeight: FontWeight.bold,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: '$days', style: numberStyle),
+            TextSpan(text: ' ngày', style: labelStyle),
+            TextSpan(text: '  -  ', style: sepStyle),
+            TextSpan(text: time, style: numberStyle),
+          ],
         ),
+        maxLines: 1,
+        textAlign: TextAlign.center,
       ),
     );
   }

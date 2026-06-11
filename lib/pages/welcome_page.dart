@@ -16,7 +16,6 @@ class WelcomePage extends StatefulWidget {
 class _WelcomePageState extends State<WelcomePage> {
   bool _loading = true;
   int? _code;
-  String? _email;
   String? _name;
 
   @override
@@ -30,7 +29,6 @@ class _WelcomePageState extends State<WelcomePage> {
     if (!mounted) return;
     setState(() {
       _code = cached.code;
-      _email = cached.email;
       _name = cached.name;
       _loading = false;
     });
@@ -98,24 +96,20 @@ class _WelcomePageState extends State<WelcomePage> {
             ),
             const SizedBox(height: 20),
             Text(
-              'Xin chào',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              name,
+              'Xin chào $name,',
               style: theme.textTheme.headlineMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 16),
-            if (_email != null && _email!.isNotEmpty)
-              _infoLine(context, Icons.email_outlined, _email!),
-            if (_code != null)
-              _infoLine(context, Icons.tag, 'Code: $_code'),
+            const SizedBox(height: 8),
+            Text(
+              'cảm ơn bạn đã đăng nhập 🎉',
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 28),
             OutlinedButton.icon(
               onPressed: _exit,
@@ -124,21 +118,6 @@ class _WelcomePageState extends State<WelcomePage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _infoLine(BuildContext context, IconData icon, String text) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18, color: colorScheme.onSurfaceVariant),
-          const SizedBox(width: 8),
-          Text(text),
-        ],
       ),
     );
   }

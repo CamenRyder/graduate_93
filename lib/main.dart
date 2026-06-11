@@ -24,7 +24,7 @@ Future<void> main() async {
     authController.load(),
   ]);
 
-  runApp(const MyApp());
+  runApp(const MyApp()); 
 }
 
 class MyApp extends StatelessWidget {
