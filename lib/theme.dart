@@ -18,6 +18,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
+      fontFamily: 'JetBrains Mono',
       scaffoldBackgroundColor: colorScheme.surface,
       cardTheme: CardThemeData(
         elevation: 0,

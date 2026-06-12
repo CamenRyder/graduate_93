@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../services/guest_cache.dart';
-import '../widgets/theme_toggle_button.dart';
+import '../widgets/typing_text.dart';
 
-/// Trang chào sau khi nhập đúng code + email. Tên lấy từ cache (đã tra cứu
-/// theo code ở trang countdown).
+/// Trang chủ sau khi khách xác thực xong (hiện là placeholder).
+/// Chưa có thông tin trong cache -> quay về trang nhập code.
 class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
 
@@ -15,133 +15,36 @@ class WelcomePage extends StatefulWidget {
 
 class _WelcomePageState extends State<WelcomePage> {
   bool _loading = true;
-  int? _code;
-  String? _name;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _checkCache();
   }
 
-  Future<void> _load() async {
+  Future<void> _checkCache() async {
     final cached = await GuestCache.load();
     if (!mounted) return;
-    setState(() {
-      _code = cached.code;
-      _name = cached.name;
-      _loading = false;
-    });
-  }
-
-  Future<void> _exit() async {
-    final router = GoRouter.of(context);
-    await GuestCache.clear();
-    if (!mounted) return;
-    router.go('/');
+    if (cached.code == null) {
+      GoRouter.of(context).go('/');
+      return;
+    }
+    setState(() => _loading = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
     return Scaffold(
-      body: Stack(
-        children: [
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: const ThemeToggleButton(),
+      body: Center(
+        child: _loading
+            ? const SizedBox.shrink()
+            : TypingText(
+                'Trang chủ hẹ hẹ',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
               ),
-            ),
-          ),
-          Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
-                child: _loading
-                    ? const CircularProgressIndicator()
-                    : (_code == null
-                        ? _noInfo(context)
-                        : _greeting(context, theme, colorScheme)),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _greeting(BuildContext context, ThemeData theme, ColorScheme colorScheme) {
-    final name = (_name == null || _name!.isEmpty) ? 'bạn' : _name!;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: colorScheme.primaryContainer,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.celebration,
-                  size: 36, color: colorScheme.onPrimaryContainer),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Xin chào $name,',
-              style: theme.textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'cảm ơn bạn đã đăng nhập 🎉',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 28),
-            OutlinedButton.icon(
-              onPressed: _exit,
-              icon: const Icon(Icons.logout),
-              label: const Text('Thoát'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _noInfo(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.info_outline, size: 40),
-            const SizedBox(height: 16),
-            const Text(
-              'Chưa có thông tin. Vui lòng nhập code và email.',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: () => GoRouter.of(context).go('/'),
-              child: const Text('Về trang đếm ngược'),
-            ),
-          ],
-        ),
       ),
     );
   }

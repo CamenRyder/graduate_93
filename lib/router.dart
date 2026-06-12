@@ -2,6 +2,7 @@ import 'package:go_router/go_router.dart';
 
 import 'controllers/auth_controller.dart';
 import 'pages/admin_page.dart';
+import 'pages/auth_page.dart';
 import 'pages/countdown_page.dart';
 import 'pages/login_page.dart';
 import 'pages/welcome_page.dart';
@@ -9,11 +10,12 @@ import 'pages/welcome_page.dart';
 /// Cấu hình điều hướng theo URL.
 ///
 /// Công khai (không cần đăng nhập):
-///  - `/`        : trang đếm ngược + nhập code/email
-///  - `/welcome` : trang chào sau khi nhập đúng
-///  - `/login`   : đăng nhập admin
+///  - `/`          : xác thực khách mời (nhập code + số điện thoại)
+///  - `/welcome`   : trang chủ sau khi xác thực
+///  - `/countdown` : trang đếm ngược đến sự kiện
+///  - `/login`     : đăng nhập admin
 /// Cần đăng nhập admin:
-///  - `/admin`   : trang quản trị
+///  - `/admin`     : trang quản trị
 final router = GoRouter(
   initialLocation: '/',
   refreshListenable: authController,
@@ -30,11 +32,15 @@ final router = GoRouter(
   routes: [
     GoRoute(
       path: '/',
-      builder: (context, state) => const CountdownPage(),
+      builder: (context, state) => const AuthPage(),
     ),
     GoRoute(
       path: '/welcome',
       builder: (context, state) => const WelcomePage(),
+    ),
+    GoRoute(
+      path: '/countdown',
+      builder: (context, state) => const CountdownPage(),
     ),
     GoRoute(
       path: '/login',
