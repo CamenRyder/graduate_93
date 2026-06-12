@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../models/app_user.dart';
 import '../services/firestore_service.dart';
 import '../services/guest_cache.dart';
+import '../widgets/theme_toggle_button.dart';
 import '../widgets/typing_text.dart';
 
 /// Trang xác thực khách mời (thiết kế tối giản, scale cho UI điện thoại).
@@ -156,6 +157,13 @@ class _AuthPageState extends State<AuthPage> {
       body: SafeArea(
         child: Stack(
           children: [
+            const Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: EdgeInsets.all(8),
+                child: ThemeToggleButton(),
+              ),
+            ),
             Center(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24),

@@ -767,9 +767,14 @@ class _UsersTableState extends State<UsersTable> {
   Widget _miniField(TextEditingController c, {bool number = false}) {
     return TextField(
       controller: c,
-      keyboardType: number ? TextInputType.number : null,
+      // Multiline để Enter xuống dòng được (trừ ô số).
+      keyboardType: number ? TextInputType.number : TextInputType.multiline,
       inputFormatters:
           number ? [FilteringTextInputFormatter.digitsOnly] : null,
+      // Tự giãn theo nội dung: 1 dòng khi text ngắn, rộng dần theo số dòng,
+      // tối đa 5 dòng rồi cuộn bên trong ô.
+      minLines: 1,
+      maxLines: number ? 1 : 5,
       decoration: const InputDecoration(
         isDense: true,
         contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),

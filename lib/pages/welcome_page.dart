@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../services/guest_cache.dart';
+import '../widgets/theme_toggle_button.dart';
 import '../widgets/typing_text.dart';
 
 /// Trang chủ sau khi khách xác thực xong (hiện là placeholder).
@@ -35,16 +36,29 @@ class _WelcomePageState extends State<WelcomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: _loading
-            ? const SizedBox.shrink()
-            : TypingText(
-                'Trang chủ hẹ hẹ',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            const Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: EdgeInsets.all(8),
+                child: ThemeToggleButton(),
               ),
+            ),
+            Center(
+              child: _loading
+                  ? const SizedBox.shrink()
+                  : TypingText(
+                      'Trang chủ hẹ hẹ',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
