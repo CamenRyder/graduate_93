@@ -1116,42 +1116,15 @@ class _UsersTableState extends State<UsersTable> {
 
   /// Mở popup soạn nội dung với khung lớn. Chỉ ghi lại vào [c] khi bấm "Xong".
   Future<void> _openTextEditor(TextEditingController c, String label) async {
-    final draft = TextEditingController(text: c.text);
-    final ok = await showDialog<bool>(
+    final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(label),
-        content: SizedBox(
-          width: 520,
-          child: TextField(
-            controller: draft,
-            autofocus: true,
-            minLines: 8,
-            maxLines: 16,
-            keyboardType: TextInputType.multiline,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              hintText: 'Nhập nội dung…',
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Xong'),
-          ),
-        ],
-      ),
+      builder: (ctx) => _TextEditorDialog(label: label, initialText: c.text),
     );
-    if (ok == true) {
-      c.text = draft.text;
+    // null = đã hủy / bấm ra ngoài -> giữ nguyên; chuỗi (kể cả rỗng) = đã "Xong".
+    if (result != null) {
+      c.text = result;
       if (mounted) setState(() {}); // cập nhật phần xem trước
     }
-    draft.dispose();
   }
 
   /// Ô ID ở chế độ thêm/sửa: KHÔNG cho nhập tay.
@@ -1289,6 +1262,66 @@ class _UsersTableState extends State<UsersTable> {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${two(dt.day)}/${two(dt.month)}/${dt.year} '
         '${two(dt.hour)}:${two(dt.minute)}';
+  }
+}
+
+/// Popup soạn nội dung dài (Message, Des_1/2/3).
+///
+/// Tự quản lý controller nháp và chỉ dispose trong [dispose] của chính nó —
+/// tức là sau khi dialog đã bị gỡ khỏi cây widget. Nếu dispose ngay sau
+/// `await showDialog` thì controller bị hủy trong lúc animation đóng còn chạy
+/// (TextField vẫn còn sống) -> lỗi "TextEditingController used after disposed".
+class _TextEditorDialog extends StatefulWidget {
+  const _TextEditorDialog({required this.label, required this.initialText});
+
+  final String label;
+  final String initialText;
+
+  @override
+  State<_TextEditorDialog> createState() => _TextEditorDialogState();
+}
+
+class _TextEditorDialogState extends State<_TextEditorDialog> {
+  late final TextEditingController _draft =
+      TextEditingController(text: widget.initialText);
+
+  @override
+  void dispose() {
+    _draft.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.label),
+      content: SizedBox(
+        width: 520,
+        child: TextField(
+          controller: _draft,
+          autofocus: true,
+          minLines: 8,
+          maxLines: 16,
+          keyboardType: TextInputType.multiline,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            hintText: 'Nhập nội dung…',
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          // null -> giữ nguyên nội dung cũ.
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Hủy'),
+        ),
+        FilledButton(
+          // Trả chuỗi (kể cả rỗng) -> ghi đè nội dung.
+          onPressed: () => Navigator.of(context).pop(_draft.text),
+          child: const Text('Xong'),
+        ),
+      ],
+    );
   }
 }
 

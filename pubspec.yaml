@@ -20,6 +20,9 @@ dependencies:
   go_router: ^17.3.0
   shared_preferences: ^2.5.5
   firebase_auth: ^6.5.2
+  # Interop web (mở link Facebook/Zalo/tel). Đã có sẵn trong pubspec.lock
+  # (transitive) nên khai báo trực tiếp không làm đổi version đã khóa.
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:

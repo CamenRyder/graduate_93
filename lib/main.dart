@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
 
 import 'controllers/auth_controller.dart';
+import 'controllers/guest_controller.dart';
 import 'controllers/theme_controller.dart';
 import 'firebase_options.dart';
 import 'router.dart';
@@ -22,6 +23,7 @@ Future<void> main() async {
   await Future.wait([
     themeController.load(),
     authController.load(),
+    guestController.load(),
   ]);
 
   runApp(const MyApp()); 

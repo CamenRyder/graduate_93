@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
+import '../controllers/guest_controller.dart';
 import '../models/app_user.dart';
 import '../services/firestore_service.dart';
 import '../services/guest_cache.dart';
+import '../widgets/contact_footer.dart';
 import '../widgets/theme_toggle_button.dart';
 import '../widgets/typing_text.dart';
 
@@ -58,7 +60,9 @@ class _AuthPageState extends State<AuthPage> {
   }
 
   bool get _codeValid => _codeCtrl.text.trim().length == 4;
-  bool get _phoneValid => _phoneCtrl.text.trim().length >= 9;
+
+  // Số điện thoại KHÔNG bắt buộc: để trống hay nhập gì cũng cho qua bước sau.
+  bool get _phoneValid => true;
 
   /// Bước 1: xác thực mã code.
   Future<void> _submitCode() async {
@@ -86,7 +90,7 @@ class _AuthPageState extends State<AuthPage> {
 
       // Đã kích hoạt trước đó -> vào thẳng trang chủ.
       if (user.isActive) {
-        await GuestCache.save(
+        await guestController.signIn(
           code: user.userId,
           email: user.email,
           name: user.name,
@@ -131,7 +135,7 @@ class _AuthPageState extends State<AuthPage> {
         docId: user.id,
         phone: _phoneCtrl.text.trim(),
       );
-      await GuestCache.save(
+      await guestController.signIn(
         code: user.userId,
         email: user.email,
         name: user.name,
@@ -206,7 +210,7 @@ class _AuthPageState extends State<AuthPage> {
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: EdgeInsets.only(bottom: 28),
-                child: _ContactFooter(),
+                child: ContactFooter(),
               ),
             ),
           ],
@@ -385,19 +389,3 @@ class _AuthPageState extends State<AuthPage> {
   }
 }
 
-/// Chữ ký nhỏ cố định dưới đáy màn hình.
-class _ContactFooter extends StatelessWidget {
-  const _ContactFooter();
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      'Liên hệ Minh Hiếu',
-      style: TextStyle(
-        fontSize: 13,
-        fontStyle: FontStyle.italic,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
-    );
-  }
-}

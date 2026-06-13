@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
+import '../controllers/guest_controller.dart';
 import '../models/app_user.dart';
 import '../services/firestore_service.dart';
 import '../services/guest_cache.dart';
@@ -98,7 +99,7 @@ class _CountdownPageState extends State<CountdownPage> {
 
       // Đã kích hoạt trước đó -> vào thẳng trang chào.
       if (user.isActive) {
-        await GuestCache.save(
+        await guestController.signIn(
           code: user.userId,
           email: user.email,
           name: user.name,
@@ -145,7 +146,7 @@ class _CountdownPageState extends State<CountdownPage> {
 
     try {
       await _service.activateGuest(docId: user.id, phone: phone);
-      await GuestCache.save(
+      await guestController.signIn(
         code: user.userId,
         email: user.email,
         name: user.name,

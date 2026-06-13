@@ -1,37 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 
-import '../services/guest_cache.dart';
+import '../widgets/contact_footer.dart';
 import '../widgets/theme_toggle_button.dart';
 import '../widgets/typing_text.dart';
 
-/// Trang chủ sau khi khách xác thực xong (hiện là placeholder).
-/// Chưa có thông tin trong cache -> quay về trang nhập code.
-class WelcomePage extends StatefulWidget {
+/// Trang chủ sau khi khách xác thực xong.
+///
+/// Router đảm bảo chỉ khách đã xác thực mới vào được đây, và không cho quay lại
+/// trang nhập code (xem redirect trong `router.dart`). Vì vậy trang này không
+/// cần tự kiểm tra cache nữa.
+class WelcomePage extends StatelessWidget {
   const WelcomePage({super.key});
-
-  @override
-  State<WelcomePage> createState() => _WelcomePageState();
-}
-
-class _WelcomePageState extends State<WelcomePage> {
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkCache();
-  }
-
-  Future<void> _checkCache() async {
-    final cached = await GuestCache.load();
-    if (!mounted) return;
-    if (cached.code == null) {
-      GoRouter.of(context).go('/');
-      return;
-    }
-    setState(() => _loading = false);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,15 +26,20 @@ class _WelcomePageState extends State<WelcomePage> {
               ),
             ),
             Center(
-              child: _loading
-                  ? const SizedBox.shrink()
-                  : TypingText(
-                      'Trang chủ hẹ hẹ',
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
+              child: TypingText(
+                'Trang chủ hẹ hẹ',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ),
+            const Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: EdgeInsets.only(bottom: 28),
+                child: ContactFooter(),
+              ),
             ),
           ],
         ),

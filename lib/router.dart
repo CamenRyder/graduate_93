@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 
 import 'controllers/auth_controller.dart';
+import 'controllers/guest_controller.dart';
 import 'pages/admin_page.dart';
 import 'pages/auth_page.dart';
 import 'pages/countdown_page.dart';
@@ -18,15 +20,22 @@ import 'pages/welcome_page.dart';
 ///  - `/admin`     : trang quản trị
 final router = GoRouter(
   initialLocation: '/',
-  refreshListenable: authController,
+  refreshListenable: Listenable.merge([authController, guestController]),
   redirect: (context, state) {
     final loc = state.matchedLocation;
     final loggedIn = authController.isLoggedIn;
+    final guestAuthed = guestController.isAuthenticated;
 
     // Bảo vệ /admin: chưa đăng nhập -> về /login.
     if (loc == '/admin' && !loggedIn) return '/login';
     // Đã đăng nhập mà mở /login -> vào /admin.
     if (loc == '/login' && loggedIn) return '/admin';
+
+    // Khách đã xác thực: vào thẳng trang chủ, chặn quay lại trang nhập code
+    // (kể cả khi bấm back trên trình duyệt hay tải lại trang).
+    if (loc == '/' && guestAuthed) return '/welcome';
+    // Chưa xác thực mà mở trang chủ khách -> về trang nhập code.
+    if (loc == '/welcome' && !guestAuthed) return '/';
     return null;
   },
   routes: [
