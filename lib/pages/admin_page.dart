@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../controllers/auth_controller.dart';
 import '../models/app_user.dart';
 import '../services/firestore_service.dart';
+import '../theme/row_palette.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
 
@@ -65,11 +66,16 @@ class _AdminPageState extends State<AdminPage> {
   bool? _activeFilter;
   bool? _confirmFilter;
 
+  /// Lọc theo màu hàng: null = tất cả; '' = chỉ hàng KHÔNG màu;
+  /// còn lại = đúng khóa màu (vd 'blue').
+  String? _colorFilter;
+
   bool get _hasFilter =>
       _nameQuery.trim().isNotEmpty ||
       _meetingQuery.trim().isNotEmpty ||
       _activeFilter != null ||
-      _confirmFilter != null;
+      _confirmFilter != null ||
+      _colorFilter != null;
 
   @override
   void dispose() {
@@ -88,6 +94,11 @@ class _AdminPageState extends State<AdminPage> {
       if (name.isNotEmpty && !u.name.toLowerCase().contains(name)) return false;
       if (_activeFilter != null && u.isActive != _activeFilter) return false;
       if (_confirmFilter != null && u.isConfirm != _confirmFilter) return false;
+      if (_colorFilter != null) {
+        // Chuẩn hóa key lạ/cũ (không khớp bảng màu) thành "không màu" ('').
+        final normalized = RowPalette.byKey(u.rowColor) == null ? '' : u.rowColor;
+        if (normalized != _colorFilter) return false;
+      }
       if (meeting.isNotEmpty &&
           !u.timeMeeting.toLowerCase().contains(meeting)) {
         return false;
@@ -104,6 +115,7 @@ class _AdminPageState extends State<AdminPage> {
       _meetingQuery = '';
       _activeFilter = null;
       _confirmFilter = null;
+      _colorFilter = null;
     });
   }
 
@@ -152,6 +164,10 @@ class _AdminPageState extends State<AdminPage> {
           ),
         ),
         SizedBox(
+          width: 190,
+          child: _colorFilterField(),
+        ),
+        SizedBox(
           width: 220,
           child: TextField(
             controller: _meetingCtrl,
@@ -196,6 +212,44 @@ class _AdminPageState extends State<AdminPage> {
           onChanged: onChanged,
         ),
       ),
+    );
+  }
+
+  /// Dropdown lọc theo màu hàng: Tất cả / Không màu / từng màu (kèm ô tròn).
+  Widget _colorFilterField() {
+    return InputDecorator(
+      decoration: const InputDecoration(labelText: 'Lọc theo màu', isDense: true),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          isExpanded: true,
+          isDense: true,
+          value: _colorFilter,
+          items: [
+            const DropdownMenuItem<String?>(value: null, child: Text('Tất cả')),
+            DropdownMenuItem<String?>(
+              value: RowPalette.none,
+              child: _colorFilterItem(null, 'Không màu'),
+            ),
+            ...RowPalette.options.map(
+              (o) => DropdownMenuItem<String?>(
+                value: o.key,
+                child: _colorFilterItem(o, o.label),
+              ),
+            ),
+          ],
+          onChanged: (v) => setState(() => _colorFilter = v),
+        ),
+      ),
+    );
+  }
+
+  Widget _colorFilterItem(RowColorOption? option, String label) {
+    return Row(
+      children: [
+        ColorDot(option: option, size: 16),
+        const SizedBox(width: 10),
+        Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+      ],
     );
   }
 
@@ -345,6 +399,8 @@ class _UsersTableState extends State<UsersTable> {
   static const double _wIndex = 44;
   static const double _wId = 60;
   static const double _wName = 150;
+  static const double _wWho = 120;
+  static const double _wMe = 120;
   static const double _wEmail = 190;
   static const double _wPhone = 120;
   static const double _wAddress = 150;
@@ -355,13 +411,15 @@ class _UsersTableState extends State<UsersTable> {
   static const double _wActive = 70;
   static const double _wConfirm = 80;
   static const double _wUpdated = 130;
-  static const double _wActions = 150;
+  static const double _wActions = 190;
 
   double get _totalWidth =>
       _wHandle +
       _wIndex +
       _wId +
       _wName +
+      _wWho +
+      _wMe +
       _wEmail +
       _wPhone +
       _wAddress +
@@ -389,6 +447,8 @@ class _UsersTableState extends State<UsersTable> {
 
   final _idCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
+  final _whoCtrl = TextEditingController();
+  final _meCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
@@ -401,9 +461,15 @@ class _UsersTableState extends State<UsersTable> {
   bool _editActive = false;
   bool _editConfirm = false;
 
+  /// Màu hàng hiện hành của hàng đang thêm/sửa — giữ lại để khi lưu form
+  /// không vô tình xóa màu (màu được đổi qua nút chọn màu riêng).
+  String _editRowColor = '';
+
   List<TextEditingController> get _allCtrls => [
         _idCtrl,
         _nameCtrl,
+        _whoCtrl,
+        _meCtrl,
         _emailCtrl,
         _phoneCtrl,
         _addressCtrl,
@@ -423,6 +489,11 @@ class _UsersTableState extends State<UsersTable> {
     _users = widget.users;
     // Đăng ký hàm lưu để nút nổi "Lưu" ở AdminPage gọi được.
     widget.session.onSave = _saveCurrent;
+    // Sau frame đầu, scroll position đã có viewportDimension -> rebuild để
+    // lớp phủ neo cột thao tác tính đúng vị trí ngay lần hiển thị đầu tiên.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -467,11 +538,14 @@ class _UsersTableState extends State<UsersTable> {
     }
     _editActive = false;
     _editConfirm = false;
+    _editRowColor = '';
   }
 
   void _fillControllers(AppUser u) {
     _idCtrl.text = u.userId.toString();
     _nameCtrl.text = u.name;
+    _whoCtrl.text = u.who;
+    _meCtrl.text = u.me;
     _emailCtrl.text = u.email;
     _phoneCtrl.text = u.phone;
     _addressCtrl.text = u.address;
@@ -483,6 +557,7 @@ class _UsersTableState extends State<UsersTable> {
     _timeEndingCtrl.text = u.timeEnding;
     _editActive = u.isActive;
     _editConfirm = u.isConfirm;
+    _editRowColor = u.rowColor;
   }
 
   void _startAdd() {
@@ -519,6 +594,8 @@ class _UsersTableState extends State<UsersTable> {
       index: index,
       userId: int.tryParse(_idCtrl.text.trim()) ?? 0,
       name: _nameCtrl.text.trim(),
+      who: _whoCtrl.text.trim(),
+      me: _meCtrl.text.trim(),
       email: _emailCtrl.text.trim(),
       phone: _phoneCtrl.text.trim(),
       address: _addressCtrl.text.trim(),
@@ -528,6 +605,7 @@ class _UsersTableState extends State<UsersTable> {
       des3: _des3Ctrl.text.trim(),
       isActive: _editActive,
       isConfirm: _editConfirm,
+      rowColor: _editRowColor,
       timeMeeting: _timeMeetingCtrl.text.trim(),
       timeEnding: _timeEndingCtrl.text.trim(),
       timeUpdated: null,
@@ -630,6 +708,22 @@ class _UsersTableState extends State<UsersTable> {
     }
   }
 
+  /// Đổi màu "holder" của hàng — ghi thẳng xuống Firebase ngay.
+  Future<void> _setColor(AppUser u, String colorKey) async {
+    if (u.rowColor == colorKey) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await widget.service.updateRowColor(docId: u.id, colorKey: colorKey);
+      if (!mounted) return;
+      setState(() => _busy = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      messenger.showSnackBar(SnackBar(content: Text('Lỗi khi đổi màu: $e')));
+    }
+  }
+
   void _onReorder(int oldIndex, int newIndex) {
     if (!_canAct || !widget.reorderEnabled) return;
     if (newIndex > oldIndex) newIndex -= 1;
@@ -705,6 +799,67 @@ class _UsersTableState extends State<UsersTable> {
     );
   }
 
+  /// Lớp phủ "neo" cụm nút thao tác vào mép phải KHUNG NHÌN.
+  ///
+  /// Khi bảng chưa cuộn hết sang phải, cụm nút nổi ngay cạnh phải khung nhìn
+  /// (đè lên nội dung phía sau, có nền đục + bóng đổ để dễ nhìn). Khi đã cuộn
+  /// tới cuối, [floatLeft] chạm vị trí cột cuối nên cụm nút về đúng chỗ như
+  /// một cột bình thường (bỏ bóng đổ). Chỉ lớp phủ này rebuild theo cuộn ngang,
+  /// không rebuild cả danh sách.
+  Widget _pinnedActions({
+    required Color background,
+    required Widget child,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Positioned.fill(
+      child: AnimatedBuilder(
+        animation: _hScrollController,
+        child: child,
+        builder: (context, child) {
+          final maxLeft = _totalWidth - _wActions;
+          // Bề rộng vùng nhìn + offset lấy trực tiếp từ scroll position
+          // (tránh LayoutBuilder làm tổ tiên ReorderableListView gây lỗi layout).
+          var floatLeft = maxLeft;
+          if (_hScrollController.hasClients) {
+            final pos = _hScrollController.position;
+            floatLeft = (pos.pixels + pos.viewportDimension - _wActions)
+                .clamp(0.0, maxLeft)
+                .toDouble();
+          }
+          // Đang "nổi" khi chưa về tới vị trí cột cuối cùng.
+          final floating = floatLeft < maxLeft - 0.5;
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(width: floatLeft),
+              Container(
+                width: _wActions,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                alignment: Alignment.centerLeft,
+                decoration: BoxDecoration(
+                  color: background,
+                  border: Border(
+                    left: BorderSide(color: colorScheme.outlineVariant),
+                  ),
+                  boxShadow: floating
+                      ? [
+                          BoxShadow(
+                            color: colorScheme.shadow.withValues(alpha: 0.18),
+                            blurRadius: 5,
+                            offset: const Offset(-3, 0),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: child,
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Widget _headerRow() {
     final colorScheme = Theme.of(context).colorScheme;
     final style = TextStyle(
@@ -714,29 +869,41 @@ class _UsersTableState extends State<UsersTable> {
     Widget h(double w, String label) => _cell(w, Text(label, style: style));
 
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
       ),
-      child: Row(
+      child: Stack(
         children: [
-          _cell(_wHandle, const SizedBox()),
-          h(_wIndex, '#'),
-          h(_wId, 'ID'),
-          h(_wName, 'Name'),
-          h(_wEmail, 'Email'),
-          h(_wPhone, 'Phone'),
-          h(_wAddress, 'Address'),
-          h(_wMessage, 'Message'),
-          h(_wDes, 'Des_1'),
-          h(_wDes, 'Des_2'),
-          h(_wDes, 'Des_3'),
-          h(_wTimeM, 'timeMeeting'),
-          h(_wTimeE, 'timeEnding'),
-          h(_wActive, 'Active'),
-          h(_wConfirm, 'Confirm'),
-          h(_wUpdated, 'Cập nhật'),
-          h(_wActions, 'Hành động'),
+          Row(
+            children: [
+              _cell(_wHandle, const SizedBox()),
+              h(_wIndex, '#'),
+              h(_wId, 'ID'),
+              h(_wName, 'Name'),
+              h(_wWho, 'who'),
+              h(_wMe, 'Me'),
+              h(_wEmail, 'Email'),
+              h(_wPhone, 'Phone'),
+              h(_wAddress, 'Address'),
+              h(_wMessage, 'Message'),
+              h(_wDes, 'Des_1'),
+              h(_wDes, 'Des_2'),
+              h(_wDes, 'Des_3'),
+              h(_wTimeM, 'timeMeeting'),
+              h(_wTimeE, 'timeEnding'),
+              h(_wActive, 'Active'),
+              h(_wConfirm, 'Confirm'),
+              h(_wUpdated, 'Cập nhật'),
+              // Chừa chỗ cho cột thao tác (được vẽ ở lớp phủ neo bên dưới).
+              const SizedBox(width: _wActions),
+            ],
+          ),
+          _pinnedActions(
+            background: colorScheme.surfaceContainerHighest,
+            child: Text('Hành động', style: style),
+          ),
         ],
       ),
     );
@@ -746,29 +913,41 @@ class _UsersTableState extends State<UsersTable> {
     final u = _users[i];
     final editing = _editingId == u.id;
     final colorScheme = Theme.of(context).colorScheme;
+    final baseBg = colorScheme.surface;
+    // Màu "holder" của hàng theo chế độ Sáng/Tối hiện hành (null = không tô).
+    final rowColor =
+        RowPalette.backgroundFor(u.rowColor, Theme.of(context).brightness);
+    // Nền hàng dạng ĐỤC để cột thao tác neo phải che sạch nội dung phía sau
+    // khi đang nổi giữa khung nhìn. Khi đang sửa: ưu tiên tông "đang sửa".
+    final rowBg = editing
+        ? Color.alphaBlend(
+            colorScheme.primaryContainer.withValues(alpha: 0.2), baseBg)
+        : (rowColor ?? baseBg);
 
     return Container(
       key: ValueKey(u.id),
       decoration: BoxDecoration(
-        color: editing
-            ? colorScheme.primaryContainer.withValues(alpha: 0.2)
-            : null,
+        color: rowBg,
         border: Border(
           bottom: BorderSide(color: colorScheme.outlineVariant),
         ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          _dragHandle(i),
-          _cell(_wIndex, Text(widget.reorderEnabled ? '$i' : '${u.index}')),
-          ...(editing ? _editCells() : _readCells(u)),
-          _cell(_wUpdated, Text(_formatTime(u.timeUpdated))),
-          _cell(
-            _wActions,
-            editing
-                ? _editActions(onCancel: _cancelEdit)
-                : _rowActions(u),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _dragHandle(i),
+              _cell(_wIndex, Text(widget.reorderEnabled ? '$i' : '${u.index}')),
+              ...(editing ? _editCells() : _readCells(u)),
+              _cell(_wUpdated, Text(_formatTime(u.timeUpdated))),
+              const SizedBox(width: _wActions),
+            ],
+          ),
+          _pinnedActions(
+            background: rowBg,
+            child: editing ? _editActions(onCancel: _cancelEdit) : _rowActions(u),
           ),
         ],
       ),
@@ -777,18 +956,31 @@ class _UsersTableState extends State<UsersTable> {
 
   Widget _newRow() {
     final colorScheme = Theme.of(context).colorScheme;
+    final bg = Color.alphaBlend(
+      colorScheme.primaryContainer.withValues(alpha: 0.25),
+      colorScheme.surface,
+    );
     return Container(
       decoration: BoxDecoration(
-        color: colorScheme.primaryContainer.withValues(alpha: 0.25),
+        color: bg,
         border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
       ),
-      child: Row(
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          _cell(_wHandle, const SizedBox()),
-          _cell(_wIndex, Text('${_users.length}')),
-          ..._editCells(),
-          _cell(_wUpdated, const Text('-')),
-          _cell(_wActions, _editActions(onCancel: _cancelAdd)),
+          Row(
+            children: [
+              _cell(_wHandle, const SizedBox()),
+              _cell(_wIndex, Text('${_users.length}')),
+              ..._editCells(),
+              _cell(_wUpdated, const Text('-')),
+              const SizedBox(width: _wActions),
+            ],
+          ),
+          _pinnedActions(
+            background: bg,
+            child: _editActions(onCancel: _cancelAdd),
+          ),
         ],
       ),
     );
@@ -818,6 +1010,8 @@ class _UsersTableState extends State<UsersTable> {
   List<Widget> _editCells() => [
         _cell(_wId, _idDisplayCell()),
         _cell(_wName, _miniField(_nameCtrl)),
+        _cell(_wWho, _miniField(_whoCtrl)),
+        _cell(_wMe, _miniField(_meCtrl)),
         _cell(_wEmail, _miniField(_emailCtrl)),
         _cell(_wPhone, _miniField(_phoneCtrl)),
         _cell(_wAddress, _miniField(_addressCtrl)),
@@ -846,6 +1040,8 @@ class _UsersTableState extends State<UsersTable> {
   List<Widget> _readCells(AppUser u) => [
         _cell(_wId, Text('${u.userId}')),
         _cell(_wName, _readText(u.name)),
+        _cell(_wWho, _readText(u.who)),
+        _cell(_wMe, _readText(u.me)),
         _cell(_wEmail, _readText(u.email)),
         _cell(_wPhone, _readText(u.phone)),
         _cell(_wAddress, _readText(u.address)),
@@ -1013,12 +1209,67 @@ class _UsersTableState extends State<UsersTable> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        _colorPickerButton(u),
         _iconBtn(Icons.edit_outlined, 'Sửa', _canAct ? () => _startEdit(u) : null),
         _iconBtn(Icons.content_copy_outlined, 'Sao chép',
             _canAct ? () => _copy(u) : null),
         _iconBtn(Icons.delete_outline, 'Xóa', _canAct ? () => _delete(u) : null,
             color: colorScheme.error),
       ],
+    );
+  }
+
+  /// Nút chọn màu "holder" cho hàng: ô tròn hiển thị màu hiện tại, bấm mở
+  /// menu các màu (kèm "Không màu"); chọn xong ghi thẳng xuống Firebase.
+  Widget _colorPickerButton(AppUser u) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final current = RowPalette.byKey(u.rowColor);
+    return PopupMenuButton<String>(
+      enabled: _canAct,
+      tooltip: 'Màu hàng',
+      position: PopupMenuPosition.under,
+      onSelected: (key) => _setColor(u, key),
+      itemBuilder: (ctx) => [
+        _colorMenuItem(RowPalette.none, 'Không màu', null, u.rowColor.isEmpty),
+        ...RowPalette.options.map(
+          (o) => _colorMenuItem(o.key, o.label, o, o.key == u.rowColor),
+        ),
+      ],
+      child: SizedBox(
+        width: 34,
+        height: 34,
+        child: Center(
+          child: current == null
+              ? Icon(
+                  Icons.palette_outlined,
+                  size: 20,
+                  color: _canAct
+                      ? colorScheme.onSurfaceVariant
+                      : colorScheme.outlineVariant,
+                )
+              : ColorDot(option: current, size: 20),
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _colorMenuItem(
+    String key,
+    String label,
+    RowColorOption? option,
+    bool selected,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return PopupMenuItem<String>(
+      value: key,
+      child: Row(
+        children: [
+          ColorDot(option: option, size: 18),
+          const SizedBox(width: 12),
+          Expanded(child: Text(label)),
+          if (selected) Icon(Icons.check, size: 18, color: colorScheme.primary),
+        ],
+      ),
     );
   }
 

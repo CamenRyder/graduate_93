@@ -131,6 +131,18 @@ class FirestoreService {
     return _rawUsersRef.doc(user.id).update(data);
   }
 
+  /// Đổi MÀU "holder" của 1 hàng — ghi THẲNG xuống Firebase, chỉ cập nhật
+  /// field `rowColor` (+ time_updated). [colorKey] rỗng = bỏ tô màu.
+  Future<void> updateRowColor({
+    required String docId,
+    required String colorKey,
+  }) {
+    return _rawUsersRef.doc(docId).update({
+      'rowColor': colorKey,
+      'time_updated': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// Lưu lại thứ tự hiển thị sau khi kéo-thả: gán index = vị trí mới cho
   /// từng user (chỉ ghi những doc có index thay đổi để tiết kiệm).
   Future<void> persistOrder(List<AppUser> orderedUsers) {

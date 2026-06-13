@@ -10,6 +10,8 @@ class AppUser {
     required this.index,
     required this.userId,
     required this.name,
+    required this.who,
+    required this.me,
     required this.email,
     required this.phone,
     required this.address,
@@ -19,6 +21,7 @@ class AppUser {
     required this.des3,
     required this.isActive,
     required this.isConfirm,
+    required this.rowColor,
     required this.timeMeeting,
     required this.timeEnding,
     required this.timeUpdated,
@@ -33,6 +36,12 @@ class AppUser {
   /// Field `ID` (kiểu số) bên trong document.
   final int userId;
   final String name;
+
+  /// Field `who` (kiểu chuỗi). User cũ chưa có field này sẽ mặc định "Mày".
+  final String who;
+
+  /// Field `Me` (kiểu chuỗi). User cũ chưa có field này mặc định rỗng.
+  final String me;
   final String email;
   final String phone;
   final String address;
@@ -44,6 +53,10 @@ class AppUser {
   /// Tài khoản đang hoạt động hay không.
   final bool isActive;
   final bool isConfirm;
+
+  /// Khóa màu "holder" của hàng (vd "blue", "maroon"). Rỗng = không tô màu.
+  /// Lưu khóa ngữ nghĩa thay vì mã RGB để tự hợp cả Sáng lẫn Tối.
+  final String rowColor;
   final String timeMeeting;
   final String timeEnding;
   final DateTime? timeUpdated;
@@ -58,6 +71,8 @@ class AppUser {
       index: (data['index'] as num?)?.toInt() ?? 0,
       userId: (data['ID'] as num?)?.toInt() ?? 0,
       name: data['Name']?.toString() ?? '',
+      who: data['who']?.toString() ?? 'Mày',
+      me: data['Me']?.toString() ?? '',
       email: data['Email']?.toString() ?? '',
       phone: data['Phone']?.toString() ?? '',
       address: data['address']?.toString() ?? '',
@@ -67,6 +82,8 @@ class AppUser {
       des3: data['Des_3']?.toString() ?? '',
       isActive: data['isActive'] as bool? ?? true,
       isConfirm: data['isConfirm'] as bool? ?? false,
+      // Mặc định KHÔNG màu khi import lần đầu; admin tự set sau.
+      rowColor: data['rowColor']?.toString() ?? '',
       timeMeeting: data['timeMeeting']?.toString() ?? '',
       timeEnding: data['timeEnding']?.toString() ?? '',
       timeUpdated: (data['time_updated'] as Timestamp?)?.toDate(),
@@ -79,6 +96,8 @@ class AppUser {
       'index': index,
       'ID': userId,
       'Name': name,
+      'who': who,
+      'Me': me,
       'Email': email,
       'Phone': phone,
       'address': address,
@@ -88,6 +107,7 @@ class AppUser {
       'Des_3': des3,
       'isActive': isActive,
       'isConfirm': isConfirm,
+      'rowColor': rowColor,
       'timeMeeting': timeMeeting,
       'timeEnding': timeEnding,
       'time_updated':
