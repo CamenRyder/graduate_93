@@ -7,6 +7,43 @@ import '../services/firestore_service.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
 
+/// Trạng thái chia sẻ giữa [AdminPage] (chứa nút nổi) và [UsersTable]
+/// (giữ logic thêm/sửa). Khi đang thêm/sửa 1 hàng, nút "Thêm user" sẽ
+/// đổi thành nút "Lưu" gọi [save].
+class EditSession extends ChangeNotifier {
+  bool _active = false;
+  bool _busy = false;
+
+  /// Hàm lưu hiện hành, do [UsersTable] đăng ký.
+  VoidCallback? onSave;
+
+  /// Đang có hàng thêm/sửa hay không (nút nổi thành "Lưu" khi true).
+  bool get active => _active;
+
+  /// Đang lưu (vô hiệu hóa nút + hiện spinner).
+  bool get busy => _busy;
+
+  void begin() {
+    _active = true;
+    _busy = false;
+    notifyListeners();
+  }
+
+  void end() {
+    _active = false;
+    _busy = false;
+    notifyListeners();
+  }
+
+  void setBusy(bool value) {
+    if (_busy == value) return;
+    _busy = value;
+    notifyListeners();
+  }
+
+  void save() => onSave?.call();
+}
+
 /// Trang quản trị: bảng users + thêm / sửa inline / sao chép / xóa /
 /// kéo-thả đổi thứ tự.
 class AdminPage extends StatefulWidget {
@@ -18,6 +55,7 @@ class AdminPage extends StatefulWidget {
 
 class _AdminPageState extends State<AdminPage> {
   final _service = FirestoreService();
+  final _session = EditSession();
   int _addToken = 0;
 
   final _searchCtrl = TextEditingController();
@@ -37,6 +75,7 @@ class _AdminPageState extends State<AdminPage> {
   void dispose() {
     _searchCtrl.dispose();
     _meetingCtrl.dispose();
+    _session.dispose();
     super.dispose();
   }
 
@@ -188,10 +227,35 @@ class _AdminPageState extends State<AdminPage> {
           const SizedBox(width: 8),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => setState(() => _addToken++),
-        icon: const Icon(Icons.add),
-        label: const Text('Thêm user'),
+      floatingActionButton: ListenableBuilder(
+        listenable: _session,
+        builder: (context, _) {
+          // Đang thêm/sửa 1 hàng -> nút "Lưu" (xanh lá, nền trắng).
+          if (_session.active) {
+            return FloatingActionButton.extended(
+              onPressed: _session.busy ? null : _session.save,
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.green,
+              icon: _session.busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.green,
+                      ),
+                    )
+                  : const Icon(Icons.check),
+              label: const Text('Lưu'),
+            );
+          }
+          // Mặc định -> nút "Thêm user".
+          return FloatingActionButton.extended(
+            onPressed: () => setState(() => _addToken++),
+            icon: const Icon(Icons.add),
+            label: const Text('Thêm user'),
+          );
+        },
       ),
       body: StreamBuilder<List<AppUser>>(
         stream: _service.watchUsers(),
@@ -237,6 +301,7 @@ class _AdminPageState extends State<AdminPage> {
                           service: _service,
                           addToken: _addToken,
                           reorderEnabled: reorderEnabled,
+                          session: _session,
                         ),
                       ),
               ),
@@ -257,6 +322,7 @@ class UsersTable extends StatefulWidget {
     required this.service,
     required this.addToken,
     required this.reorderEnabled,
+    required this.session,
   });
 
   final List<AppUser> users;
@@ -265,6 +331,9 @@ class UsersTable extends StatefulWidget {
 
   /// Khi đang lọc/tìm kiếm thì tắt kéo-thả (false).
   final bool reorderEnabled;
+
+  /// Trạng thái chia sẻ với nút nổi "Lưu" ở [AdminPage].
+  final EditSession session;
 
   @override
   State<UsersTable> createState() => _UsersTableState();
@@ -352,6 +421,8 @@ class _UsersTableState extends State<UsersTable> {
   void initState() {
     super.initState();
     _users = widget.users;
+    // Đăng ký hàm lưu để nút nổi "Lưu" ở AdminPage gọi được.
+    widget.session.onSave = _saveCurrent;
   }
 
   @override
@@ -370,11 +441,24 @@ class _UsersTableState extends State<UsersTable> {
 
   @override
   void dispose() {
+    widget.session.onSave = null;
     _hScrollController.dispose();
     for (final c in _allCtrls) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  /// Hàm lưu dùng chung cho nút nổi "Lưu": tùy trạng thái mà lưu hàng
+  /// mới hay lưu thay đổi của hàng đang sửa.
+  void _saveCurrent() {
+    if (_busy) return;
+    if (_addingNew) {
+      _saveNew();
+    } else if (_editingId != null) {
+      final idx = _users.indexWhere((u) => u.id == _editingId);
+      if (idx != -1) _saveEdit(_users[idx]);
+    }
   }
 
   void _clearControllers() {
@@ -410,16 +494,24 @@ class _UsersTableState extends State<UsersTable> {
     }
     _clearControllers();
     setState(() => _addingNew = true);
+    widget.session.begin(); // nút "Thêm user" -> "Lưu"
   }
 
-  void _cancelAdd() => setState(() => _addingNew = false);
+  void _cancelAdd() {
+    setState(() => _addingNew = false);
+    widget.session.end();
+  }
 
   void _startEdit(AppUser u) {
     _fillControllers(u);
     setState(() => _editingId = u.id);
+    widget.session.begin(); // nút "Thêm user" -> "Lưu"
   }
 
-  void _cancelEdit() => setState(() => _editingId = null);
+  void _cancelEdit() {
+    setState(() => _editingId = null);
+    widget.session.end();
+  }
 
   AppUser _userFromControllers({required String id, required int index}) {
     return AppUser(
@@ -445,6 +537,7 @@ class _UsersTableState extends State<UsersTable> {
   Future<void> _saveEdit(AppUser original) async {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
+    widget.session.setBusy(true);
     try {
       await widget.service.updateUser(
         _userFromControllers(id: original.id, index: original.index),
@@ -454,10 +547,12 @@ class _UsersTableState extends State<UsersTable> {
         _busy = false;
         _editingId = null;
       });
+      widget.session.end();
       messenger.showSnackBar(const SnackBar(content: Text('Đã lưu thay đổi')));
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
+      widget.session.setBusy(false);
       messenger.showSnackBar(SnackBar(content: Text('Lỗi khi lưu: $e')));
     }
   }
@@ -465,17 +560,23 @@ class _UsersTableState extends State<UsersTable> {
   Future<void> _saveNew() async {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
+    widget.session.setBusy(true);
     try {
+      // Tự sinh mã ID 4 chữ số ngẫu nhiên, không trùng — admin không nhập tay.
+      final newId = await widget.service.generateUniqueUserId();
+      _idCtrl.text = newId.toString();
       await widget.service.addUser(_userFromControllers(id: '', index: 0));
       if (!mounted) return;
       setState(() {
         _busy = false;
         _addingNew = false;
       });
+      widget.session.end();
       messenger.showSnackBar(const SnackBar(content: Text('Đã thêm user mới')));
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
+      widget.session.setBusy(false);
       messenger.showSnackBar(SnackBar(content: Text('Lỗi khi thêm: $e')));
     }
   }
@@ -484,13 +585,16 @@ class _UsersTableState extends State<UsersTable> {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
-      final newId = await widget.service.copyUser(u);
+      final newUserId = await widget.service.generateUniqueUserId();
+      final newDocId = await widget.service.copyUser(u, newUserId: newUserId);
       if (!mounted) return;
       _fillControllers(u);
+      _idCtrl.text = newUserId.toString(); // mã mới, không trùng bản gốc
       setState(() {
         _busy = false;
-        _editingId = newId;
+        _editingId = newDocId;
       });
+      widget.session.begin(); // đang sửa bản sao -> nút "Lưu"
       messenger.showSnackBar(
         const SnackBar(content: Text('Đã sao chép — chỉnh sửa rồi bấm Lưu')),
       );
@@ -663,7 +767,7 @@ class _UsersTableState extends State<UsersTable> {
           _cell(
             _wActions,
             editing
-                ? _editActions(onSave: () => _saveEdit(u), onCancel: _cancelEdit)
+                ? _editActions(onCancel: _cancelEdit)
                 : _rowActions(u),
           ),
         ],
@@ -684,7 +788,7 @@ class _UsersTableState extends State<UsersTable> {
           _cell(_wIndex, Text('${_users.length}')),
           ..._editCells(),
           _cell(_wUpdated, const Text('-')),
-          _cell(_wActions, _editActions(onSave: _saveNew, onCancel: _cancelAdd)),
+          _cell(_wActions, _editActions(onCancel: _cancelAdd)),
         ],
       ),
     );
@@ -712,15 +816,15 @@ class _UsersTableState extends State<UsersTable> {
   }
 
   List<Widget> _editCells() => [
-        _cell(_wId, _miniField(_idCtrl, number: true)),
+        _cell(_wId, _idDisplayCell()),
         _cell(_wName, _miniField(_nameCtrl)),
         _cell(_wEmail, _miniField(_emailCtrl)),
         _cell(_wPhone, _miniField(_phoneCtrl)),
         _cell(_wAddress, _miniField(_addressCtrl)),
-        _cell(_wMessage, _miniField(_messageCtrl)),
-        _cell(_wDes, _miniField(_des1Ctrl)),
-        _cell(_wDes, _miniField(_des2Ctrl)),
-        _cell(_wDes, _miniField(_des3Ctrl)),
+        _cell(_wMessage, _expandableField(_messageCtrl, 'Message')),
+        _cell(_wDes, _expandableField(_des1Ctrl, 'Des_1')),
+        _cell(_wDes, _expandableField(_des2Ctrl, 'Des_2')),
+        _cell(_wDes, _expandableField(_des3Ctrl, 'Des_3')),
         _cell(_wTimeM, _miniField(_timeMeetingCtrl)),
         _cell(_wTimeE, _miniField(_timeEndingCtrl)),
         _cell(
@@ -782,6 +886,93 @@ class _UsersTableState extends State<UsersTable> {
     );
   }
 
+  /// Ô nhập dạng "xem trước + nhấn để mở popup". Dùng cho các field nội dung
+  /// dài (Message, Des_1/2/3) để có không gian rộng hơn khi nhập.
+  Widget _expandableField(TextEditingController c, String label) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final text = c.text.trim();
+    return InkWell(
+      onTap: () => _openTextEditor(c, label),
+      borderRadius: BorderRadius.circular(4),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          suffixIcon: const Icon(Icons.open_in_full, size: 16),
+          suffixIconConstraints:
+              const BoxConstraints(minWidth: 28, minHeight: 28),
+        ),
+        child: Text(
+          text.isEmpty ? 'Nhấn để nhập…' : text,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: text.isEmpty
+              ? TextStyle(
+                  color: colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+
+  /// Mở popup soạn nội dung với khung lớn. Chỉ ghi lại vào [c] khi bấm "Xong".
+  Future<void> _openTextEditor(TextEditingController c, String label) async {
+    final draft = TextEditingController(text: c.text);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(label),
+        content: SizedBox(
+          width: 520,
+          child: TextField(
+            controller: draft,
+            autofocus: true,
+            minLines: 8,
+            maxLines: 16,
+            keyboardType: TextInputType.multiline,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: 'Nhập nội dung…',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Xong'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      c.text = draft.text;
+      if (mounted) setState(() {}); // cập nhật phần xem trước
+    }
+    draft.dispose();
+  }
+
+  /// Ô ID ở chế độ thêm/sửa: KHÔNG cho nhập tay.
+  /// - Khi sửa user cũ: hiển thị mã hiện có.
+  /// - Khi thêm mới: chưa có mã (sẽ tự sinh lúc lưu) -> hiển thị "Tự động".
+  Widget _idDisplayCell() {
+    final text = _idCtrl.text.trim();
+    if (text.isNotEmpty) return _readText(text);
+    return Text(
+      'Tự động',
+      style: TextStyle(
+        fontStyle: FontStyle.italic,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+
   Widget _readText(String value) {
     return Text(
       value.isEmpty ? '-' : value,
@@ -831,26 +1022,12 @@ class _UsersTableState extends State<UsersTable> {
     );
   }
 
-  Widget _editActions({
-    required VoidCallback onSave,
-    required VoidCallback onCancel,
-  }) {
+  // Cột "Hành động" khi đang sửa/thêm chỉ còn nút Hủy — việc Lưu nay do
+  // nút nổi "Lưu" ở AdminPage đảm nhiệm.
+  Widget _editActions({required VoidCallback onCancel}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _iconBtn(
-          Icons.check_circle,
-          'Lưu',
-          _busy ? null : onSave,
-          color: Colors.green,
-          customIcon: _busy
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : null,
-        ),
         _iconBtn(Icons.close, 'Hủy', _busy ? null : onCancel),
       ],
     );

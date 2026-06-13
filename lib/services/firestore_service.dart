@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/app_user.dart';
@@ -36,6 +38,32 @@ class FirestoreService {
     return snap.docs.first.data();
   }
 
+  /// Sinh một mã `ID` ngẫu nhiên gồm 4 chữ số (1000–9999) CHƯA được dùng.
+  /// Đọc toàn bộ user hiện có để loại các mã đã tồn tại, đảm bảo không trùng.
+  /// Ném [StateError] nếu đã dùng hết toàn bộ mã 4 chữ số.
+  Future<int> generateUniqueUserId() async {
+    const minId = 1000;
+    const maxId = 9999;
+
+    final snap = await _rawUsersRef.get();
+    final used = <int>{};
+    for (final doc in snap.docs) {
+      final id = (doc.data()['ID'] as num?)?.toInt();
+      if (id != null) used.add(id);
+    }
+
+    if (used.length >= (maxId - minId + 1)) {
+      throw StateError('Đã dùng hết mã ID 4 chữ số.');
+    }
+
+    final rnd = Random();
+    int candidate;
+    do {
+      candidate = minId + rnd.nextInt(maxId - minId + 1);
+    } while (used.contains(candidate));
+    return candidate;
+  }
+
   /// Khách kích hoạt lần đầu: lưu số điện thoại và bật `isActive = true`.
   /// Chỉ ghi đúng 3 field (Phone, isActive, time_updated) để khớp với
   /// Firestore rules cho phép khách (chưa đăng nhập) cập nhật.
@@ -68,8 +96,9 @@ class FirestoreService {
   /// Sao chép [source] thành 1 user mới đặt NGAY DƯỚI nó.
   /// Bản sao có index = source.index + 1; các user phía dưới được đẩy
   /// xuống 1 bậc để chừa chỗ (giữ index liền mạch).
+  /// [newUserId] là mã `ID` mới (không trùng) cấp cho bản sao.
   /// Trả về document id của bản sao (để vào chế độ sửa ngay).
-  Future<String> copyUser(AppUser source) async {
+  Future<String> copyUser(AppUser source, {required int newUserId}) async {
     final newIndex = source.index + 1;
 
     // Các user đang ở vị trí >= newIndex -> dịch xuống 1.
@@ -83,9 +112,10 @@ class FirestoreService {
       batch.update(doc.reference, {'index': cur + 1});
     }
 
-    // Tạo bản sao (Firestore tự sinh document id mới).
+    // Tạo bản sao (Firestore tự sinh document id mới), gán mã ID mới.
     final newRef = _rawUsersRef.doc();
     final data = source.toFirestore()
+      ..['ID'] = newUserId
       ..['index'] = newIndex
       ..['time_updated'] = FieldValue.serverTimestamp();
     batch.set(newRef, data);
