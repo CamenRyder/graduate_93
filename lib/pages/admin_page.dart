@@ -397,7 +397,7 @@ class _UsersTableState extends State<UsersTable> {
   // Độ rộng từng cột (px).
   static const double _wHandle = 40;
   static const double _wIndex = 44;
-  static const double _wId = 60;
+  static const double _wId = 80;
   static const double _wName = 150;
   static const double _wWho = 120;
   static const double _wMe = 120;
@@ -612,11 +612,55 @@ class _UsersTableState extends State<UsersTable> {
     );
   }
 
+  /// Xác thực (và nếu cần thì tự sinh) mã ID lúc lưu.
+  /// Trả về mã hợp lệ; trả null nếu không hợp lệ (đã hiện snackbar lỗi).
+  /// [docId] = id document đang sửa (null khi thêm) để bỏ qua lúc kiểm trùng.
+  /// [allowAuto] = true (thêm mới) cho phép để trống -> tự sinh mã mới.
+  Future<int?> _resolveUserId({
+    required String? docId,
+    required bool allowAuto,
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final raw = _idCtrl.text.trim();
+
+    if (raw.isEmpty) {
+      if (allowAuto) return widget.service.generateUniqueUserId();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Vui lòng nhập mã ID')),
+      );
+      return null;
+    }
+
+    final code = int.tryParse(raw);
+    if (code == null || raw.length != 4) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Mã ID phải gồm đúng 4 chữ số')),
+      );
+      return null;
+    }
+
+    if (await widget.service.isUserIdTaken(code, exceptDocId: docId)) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Mã ID $code đã được dùng, chọn mã khác')),
+      );
+      return null;
+    }
+    return code;
+  }
+
   Future<void> _saveEdit(AppUser original) async {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     widget.session.setBusy(true);
     try {
+      final code = await _resolveUserId(docId: original.id, allowAuto: false);
+      if (code == null) {
+        if (!mounted) return;
+        setState(() => _busy = false);
+        widget.session.setBusy(false);
+        return; // mã không hợp lệ -> giữ nguyên hàng đang sửa để admin sửa lại
+      }
+      _idCtrl.text = code.toString();
       await widget.service.updateUser(
         _userFromControllers(id: original.id, index: original.index),
       );
@@ -640,9 +684,15 @@ class _UsersTableState extends State<UsersTable> {
     setState(() => _busy = true);
     widget.session.setBusy(true);
     try {
-      // Tự sinh mã ID 4 chữ số ngẫu nhiên, không trùng — admin không nhập tay.
-      final newId = await widget.service.generateUniqueUserId();
-      _idCtrl.text = newId.toString();
+      // Admin có thể nhập mã 4 chữ số; để trống thì tự sinh mã không trùng.
+      final code = await _resolveUserId(docId: null, allowAuto: true);
+      if (code == null) {
+        if (!mounted) return;
+        setState(() => _busy = false);
+        widget.session.setBusy(false);
+        return; // mã không hợp lệ -> giữ nguyên hàng mới để admin sửa lại
+      }
+      _idCtrl.text = code.toString();
       await widget.service.addUser(_userFromControllers(id: '', index: 0));
       if (!mounted) return;
       setState(() {
@@ -1008,7 +1058,7 @@ class _UsersTableState extends State<UsersTable> {
   }
 
   List<Widget> _editCells() => [
-        _cell(_wId, _idDisplayCell()),
+        _cell(_wId, _idEditField()),
         _cell(_wName, _miniField(_nameCtrl)),
         _cell(_wWho, _miniField(_whoCtrl)),
         _cell(_wMe, _miniField(_meCtrl)),
@@ -1127,17 +1177,21 @@ class _UsersTableState extends State<UsersTable> {
     }
   }
 
-  /// Ô ID ở chế độ thêm/sửa: KHÔNG cho nhập tay.
-  /// - Khi sửa user cũ: hiển thị mã hiện có.
-  /// - Khi thêm mới: chưa có mã (sẽ tự sinh lúc lưu) -> hiển thị "Tự động".
-  Widget _idDisplayCell() {
-    final text = _idCtrl.text.trim();
-    if (text.isNotEmpty) return _readText(text);
-    return Text(
-      'Tự động',
-      style: TextStyle(
-        fontStyle: FontStyle.italic,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
+  /// Ô nhập mã ID (số, tối đa 4 chữ số) ở chế độ thêm/sửa.
+  /// - Khi sửa user cũ: điền sẵn mã hiện có, admin có thể đổi.
+  /// - Khi thêm mới: để trống -> hiện gợi ý "Tự động" và sẽ tự sinh lúc lưu.
+  Widget _idEditField() {
+    return TextField(
+      controller: _idCtrl,
+      keyboardType: TextInputType.number,
+      inputFormatters: [
+        FilteringTextInputFormatter.digitsOnly,
+        LengthLimitingTextInputFormatter(4),
+      ],
+      decoration: InputDecoration(
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        hintText: _addingNew ? 'Tự động' : null,
       ),
     );
   }

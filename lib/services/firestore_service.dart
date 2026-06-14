@@ -38,6 +38,16 @@ class FirestoreService {
     return snap.docs.first.data();
   }
 
+  /// Kiểm tra mã `ID` (4 chữ số) đã bị user khác chiếm chưa.
+  /// [exceptDocId] để bỏ qua chính document đang sửa (cho phép giữ nguyên mã).
+  Future<bool> isUserIdTaken(int code, {String? exceptDocId}) async {
+    final snap = await _rawUsersRef.where('ID', isEqualTo: code).get();
+    for (final doc in snap.docs) {
+      if (doc.id != exceptDocId) return true;
+    }
+    return false;
+  }
+
   /// Sinh một mã `ID` ngẫu nhiên gồm 4 chữ số (1000–9999) CHƯA được dùng.
   /// Đọc toàn bộ user hiện có để loại các mã đã tồn tại, đảm bảo không trùng.
   /// Ném [StateError] nếu đã dùng hết toàn bộ mã 4 chữ số.
