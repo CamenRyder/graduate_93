@@ -7,6 +7,7 @@ import '../models/app_user.dart';
 import '../services/firestore_service.dart';
 import '../services/guest_cache.dart';
 import '../widgets/contact_footer.dart';
+import '../widgets/guest_logout_button.dart';
 import '../widgets/theme_toggle_button.dart';
 import '../widgets/typing_text.dart';
 
@@ -171,7 +172,13 @@ class _AuthPageState extends State<AuthPage> {
               alignment: Alignment.topRight,
               child: Padding(
                 padding: EdgeInsets.all(8),
-                child: ThemeToggleButton(),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GuestLogoutButton(),
+                    ThemeToggleButton(),
+                  ],
+                ),
               ),
             ),
             Center(

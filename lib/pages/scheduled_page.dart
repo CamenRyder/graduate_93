@@ -101,7 +101,6 @@ class _ScheduledPageState extends State<ScheduledPage> {
     }
 
     final style = messageTextStyle(context);
-    final colorScheme = Theme.of(context).colorScheme;
 
     // Toàn bộ nội dung fade in một lần khi vào màn (canh giữa).
     return TweenAnimationBuilder<double>(
@@ -122,11 +121,16 @@ class _ScheduledPageState extends State<ScheduledPage> {
                   text: _timeMeeting,
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
+                const TextSpan(text: ' tại '),
+                const TextSpan(
+                  text: 'hồ cá Koi',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 TextSpan(
-                  text: ' tại hồ cá Koi ở trường $_me nhe. Sơ đồ trường $_me '
-                      'và vị trí trên map t có cung cấp bên dưới. Hôm thứ 6 nếu '
-                      '$_who không rõ thông tin thì cứ quét QR mã và xem thông '
-                      'tin tổng hợp nhoa',
+                  text: ' ở trường $_me nhe. Sơ đồ trường $_me và vị trí trên '
+                      'map t có cung cấp bên dưới. Hôm thứ 6 nếu $_who không rõ '
+                      'thông tin thì cứ quét QR mã và xem thông tin tổng hợp '
+                      'nhoa',
                 ),
               ],
             ),
@@ -141,48 +145,19 @@ class _ScheduledPageState extends State<ScheduledPage> {
             style: style.copyWith(fontStyle: FontStyle.italic),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 18),
-          // Link mở màn hướng dẫn di chuyển.
-          _link(
-            label: 'xem hướng dẫn',
-            icon: Icons.arrow_forward,
-            color: colorScheme.primary,
-            onTap: () => context.go('/guide'),
+          const SizedBox(height: 22),
+          // Nút mở màn hướng dẫn di chuyển — style nút giống màn đăng nhập.
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: kBrandGreen,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => context.go('/guide'),
+            child: const Text('xem hướng dẫn'),
           ),
         ],
       ),
     );
   }
 
-  Widget _link({
-    required String label,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: color,
-                decoration: TextDecoration.underline,
-                decorationColor: color,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(icon, size: 16, color: color),
-          ],
-        ),
-      ),
-    );
-  }
 }

@@ -8,6 +8,7 @@ import '../controllers/guest_controller.dart';
 import '../models/app_user.dart';
 import '../services/firestore_service.dart';
 import '../services/guest_cache.dart';
+import '../widgets/guest_logout_button.dart';
 import '../widgets/theme_toggle_button.dart';
 
 /// Trang công khai: đếm ngược đến 09:00 ngày 26/06/2026.
@@ -188,7 +189,13 @@ class _CountdownPageState extends State<CountdownPage> {
               alignment: Alignment.topRight,
               child: Padding(
                 padding: const EdgeInsets.all(8),
-                child: const ThemeToggleButton(),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GuestLogoutButton(),
+                    ThemeToggleButton(),
+                  ],
+                ),
               ),
             ),
           ),
