@@ -94,6 +94,9 @@ class _AuthPageState extends State<AuthPage> {
           code: user.userId,
           email: user.email,
           name: user.name,
+          who: user.who,
+          me: user.me,
+          confirmed: user.isConfirm,
         );
         if (!mounted) return;
         router.go('/welcome');
@@ -139,6 +142,9 @@ class _AuthPageState extends State<AuthPage> {
         code: user.userId,
         email: user.email,
         name: user.name,
+        who: user.who,
+        me: user.me,
+        confirmed: user.isConfirm,
       );
       if (!mounted) return;
       router.go('/welcome');

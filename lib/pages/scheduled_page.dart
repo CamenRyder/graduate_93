@@ -1,0 +1,188 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+import '../controllers/guest_controller.dart';
+import '../models/app_user.dart';
+import '../services/firestore_service.dart';
+import '../theme/app_styles.dart';
+import '../widgets/mobile_page.dart';
+
+/// Màn "lịch hẹn" — vào sau khi khách bấm Gửi (đã xác nhận tham dự).
+///
+/// Hiện 2 đoạn lời nhắn (canh giữa, fade in) về điểm hẹn & lời dặn, kèm link
+/// "xem hướng dẫn" mở màn hướng dẫn di chuyển.
+class ScheduledPage extends StatefulWidget {
+  const ScheduledPage({super.key});
+
+  @override
+  State<ScheduledPage> createState() => _ScheduledPageState();
+}
+
+class _ScheduledPageState extends State<ScheduledPage> {
+  final _service = FirestoreService();
+
+  AppUser? _user;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUser();
+  }
+
+  Future<void> _loadUser() async {
+    final code = guestController.code;
+    if (code == null) {
+      setState(() {
+        _loading = false;
+        _error = 'Phiên đã hết, anh/chị mở lại từ đầu giúp em nhen.';
+      });
+      return;
+    }
+    try {
+      final user = await _service.findByCodeOnly(code);
+      if (!mounted) return;
+      setState(() {
+        _user = user;
+        _loading = false;
+        if (user == null) {
+          _error = 'Không tìm thấy thông tin, anh/chị thử lại giúp em nhen.';
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Mạng lag hay sao á, anh/chị tải lại giúp em nhen.';
+      });
+    }
+  }
+
+  // Xưng hô / giờ hẹn; field trống thì lùi về chữ gốc để câu không hụt.
+  String get _who => _orElse(_user?.who, 'anh');
+  String get _me => _orElse(_user?.me, 'em');
+  String get _timeMeeting => _orElse(_user?.timeMeeting, '11h30');
+
+  static String _orElse(String? value, String fallback) {
+    final trimmed = value?.trim() ?? '';
+    return trimmed.isEmpty ? fallback : trimmed;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MobilePage(child: _body());
+  }
+
+  Widget _body() {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 40),
+        child: Center(
+          child: SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(
+              strokeWidth: 4.5,
+              strokeCap: StrokeCap.round,
+              color: kBrandGreen,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Text(
+        _error!,
+        style: messageTextStyle(context),
+        textAlign: TextAlign.center,
+      );
+    }
+
+    final style = messageTextStyle(context);
+    final colorScheme = Theme.of(context).colorScheme;
+
+    // Toàn bộ nội dung fade in một lần khi vào màn (canh giữa).
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOut,
+      builder: (context, t, child) => Opacity(opacity: t, child: child),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Đoạn 1 — in đậm giờ hẹn gặp.
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: 'Em đã nhận thông tin nhe. Hẹn $_who lúc '),
+                TextSpan(
+                  text: _timeMeeting,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                TextSpan(
+                  text: ' tại hồ cá Koi ở trường $_me nhe. Sơ đồ trường $_me '
+                      'và vị trí trên map t có cung cấp bên dưới. Hôm thứ 6 nếu '
+                      '$_who không rõ thông tin thì cứ quét QR mã và xem thông '
+                      'tin tổng hợp nhoa',
+                ),
+              ],
+            ),
+            style: style,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          // Đoạn 2 — in nghiêng.
+          Text(
+            'Không cần mua quà hay hoa đâu, $_me muốn chụp 1 2 tấm hình cho '
+            'dịp tốt nghiệp này để lưu lại thôi. ',
+            style: style.copyWith(fontStyle: FontStyle.italic),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 18),
+          // Link mở màn hướng dẫn di chuyển.
+          _link(
+            label: 'xem hướng dẫn',
+            icon: Icons.arrow_forward,
+            color: colorScheme.primary,
+            onTap: () => context.go('/guide'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _link({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: color,
+                decoration: TextDecoration.underline,
+                decorationColor: color,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(icon, size: 16, color: color),
+          ],
+        ),
+      ),
+    );
+  }
+}

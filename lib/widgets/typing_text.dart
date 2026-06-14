@@ -13,6 +13,7 @@ class TypingText extends StatefulWidget {
     super.key,
     this.style,
     this.charDuration = const Duration(milliseconds: 30),
+    this.onCompleted,
   });
 
   final String text;
@@ -20,6 +21,9 @@ class TypingText extends StatefulWidget {
 
   /// Khoảng cách giữa 2 ký tự.
   final Duration charDuration;
+
+  /// Gọi đúng 1 lần khi gõ xong ký tự cuối (dùng để nối tiếp đoạn sau).
+  final VoidCallback? onCompleted;
 
   @override
   State<TypingText> createState() => _TypingTextState();
@@ -59,7 +63,10 @@ class _TypingTextState extends State<TypingText> {
         return;
       }
       setState(() => _shown++);
-      if (_shown >= _chars.length) timer.cancel();
+      if (_shown >= _chars.length) {
+        timer.cancel();
+        widget.onCompleted?.call();
+      }
     });
   }
 

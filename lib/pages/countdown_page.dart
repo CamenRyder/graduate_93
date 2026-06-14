@@ -103,6 +103,9 @@ class _CountdownPageState extends State<CountdownPage> {
           code: user.userId,
           email: user.email,
           name: user.name,
+          who: user.who,
+          me: user.me,
+          confirmed: user.isConfirm,
         );
         if (!mounted) return;
         router.go('/welcome');
@@ -150,6 +153,9 @@ class _CountdownPageState extends State<CountdownPage> {
         code: user.userId,
         email: user.email,
         name: user.name,
+        who: user.who,
+        me: user.me,
+        confirmed: user.isConfirm,
       );
       if (!mounted) return;
       router.go('/welcome');

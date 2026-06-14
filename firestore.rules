@@ -18,14 +18,23 @@ service cloud.firestore {
         && request.resource.data.isActive == true;
     }
 
+    // Khách gửi câu trả lời + xác nhận tham dự: chỉ được sửa ĐÚNG 3 field:
+    //   address, isConfirm, time_updated — và bắt buộc đặt isConfirm = true.
+    // Dùng cho nút "Gửi" ở màn chi tiết lời mời.
+    function isGuestConfirm() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly(['address', 'isConfirm', 'time_updated'])
+        && request.resource.data.isConfirm == true;
+    }
+
     // Collection users:
     //   ĐỌC: công khai (khách tra cứu theo mã code).
     //   TẠO / XÓA: chỉ admin.
-    //   CẬP NHẬT: admin (mọi field) HOẶC khách (chỉ kích hoạt như trên).
+    //   CẬP NHẬT: admin (mọi field) HOẶC khách (kích hoạt / xác nhận như trên).
     match /users/{userId} {
       allow read: if true;
       allow create, delete: if isAdmin();
-      allow update: if isAdmin() || isGuestActivation();
+      allow update: if isAdmin() || isGuestActivation() || isGuestConfirm();
     }
 
     // Mọi document khác: đọc công khai, ghi chỉ admin (giữ như cũ).

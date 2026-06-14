@@ -78,6 +78,23 @@ class FirestoreService {
     });
   }
 
+  /// Khách gửi câu trả lời + xác nhận tham dự: lưu `address` và bật `isConfirm`.
+  /// Chỉ ghi đúng 3 field (address, isConfirm, time_updated) để khớp với
+  /// Firestore rules cho phép khách (chưa đăng nhập) cập nhật.
+  ///
+  /// LƯU Ý: rules phải cho phép khách ghi `address` + `isConfirm` (xem hàm
+  /// `isGuestConfirm` trong firestore.rules) thì thao tác này mới thành công.
+  Future<void> confirmAndSaveAddress({
+    required String docId,
+    required String address,
+  }) {
+    return _rawUsersRef.doc(docId).update({
+      'address': address,
+      'isConfirm': true,
+      'time_updated': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// Thêm 1 user mới vào CUỐI danh sách (index = max + 1).
   /// `time_updated` đặt theo giờ server.
   Future<void> addUser(AppUser user) async {
