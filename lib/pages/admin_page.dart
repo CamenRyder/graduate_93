@@ -483,6 +483,45 @@ class _UsersTableState extends State<UsersTable> {
 
   bool get _canAct => _editingId == null && !_addingNew && !_busy;
 
+  void _showToast(String msg, {bool isError = false}) {
+    final overlay = Overlay.of(context);
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => Positioned(
+        top: 24,
+        right: 24,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 360),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: isError ? const Color(0xFFC62828) : const Color(0xFF2E7D32),
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: const [
+                BoxShadow(color: Colors.black38, blurRadius: 8, offset: Offset(0, 4)),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isError ? Icons.error_outline : Icons.check_circle_outline,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Flexible(child: Text(msg, style: const TextStyle(color: Colors.white))),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    Future.delayed(const Duration(milliseconds: 2500), entry.remove);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -562,9 +601,7 @@ class _UsersTableState extends State<UsersTable> {
 
   void _startAdd() {
     if (!_canAct) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Hãy lưu hoặc hủy hàng đang thao tác trước.')),
-      );
+      _showToast('Hãy lưu hoặc hủy hàng đang thao tác trước.');
       return;
     }
     _clearControllers();
@@ -620,36 +657,28 @@ class _UsersTableState extends State<UsersTable> {
     required String? docId,
     required bool allowAuto,
   }) async {
-    final messenger = ScaffoldMessenger.of(context);
     final raw = _idCtrl.text.trim();
 
     if (raw.isEmpty) {
       if (allowAuto) return widget.service.generateUniqueUserId();
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Vui lòng nhập mã ID')),
-      );
+      _showToast('Vui lòng nhập mã ID', isError: true);
       return null;
     }
 
     final code = int.tryParse(raw);
     if (code == null || raw.length != 4) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Mã ID phải gồm đúng 4 chữ số')),
-      );
+      _showToast('Mã ID phải gồm đúng 4 chữ số', isError: true);
       return null;
     }
 
     if (await widget.service.isUserIdTaken(code, exceptDocId: docId)) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Mã ID $code đã được dùng, chọn mã khác')),
-      );
+      _showToast('Mã ID $code đã được dùng, chọn mã khác', isError: true);
       return null;
     }
     return code;
   }
 
   Future<void> _saveEdit(AppUser original) async {
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     widget.session.setBusy(true);
     try {
@@ -670,17 +699,16 @@ class _UsersTableState extends State<UsersTable> {
         _editingId = null;
       });
       widget.session.end();
-      messenger.showSnackBar(const SnackBar(content: Text('Đã lưu thay đổi')));
+      _showToast('Đã lưu thay đổi');
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
       widget.session.setBusy(false);
-      messenger.showSnackBar(SnackBar(content: Text('Lỗi khi lưu: $e')));
+      _showToast('Lỗi khi lưu: $e', isError: true);
     }
   }
 
   Future<void> _saveNew() async {
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     widget.session.setBusy(true);
     try {
@@ -700,17 +728,16 @@ class _UsersTableState extends State<UsersTable> {
         _addingNew = false;
       });
       widget.session.end();
-      messenger.showSnackBar(const SnackBar(content: Text('Đã thêm user mới')));
+      _showToast('Đã thêm user mới');
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
       widget.session.setBusy(false);
-      messenger.showSnackBar(SnackBar(content: Text('Lỗi khi thêm: $e')));
+      _showToast('Lỗi khi thêm: $e', isError: true);
     }
   }
 
   Future<void> _copy(AppUser u) async {
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       final newUserId = await widget.service.generateUniqueUserId();
@@ -723,13 +750,11 @@ class _UsersTableState extends State<UsersTable> {
         _editingId = newDocId;
       });
       widget.session.begin(); // đang sửa bản sao -> nút "Lưu"
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Đã sao chép — chỉnh sửa rồi bấm Lưu')),
-      );
+      _showToast('Đã sao chép — chỉnh sửa rồi bấm Lưu');
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(SnackBar(content: Text('Lỗi khi sao chép: $e')));
+      _showToast('Lỗi khi sao chép: $e', isError: true);
     }
   }
 
@@ -744,24 +769,22 @@ class _UsersTableState extends State<UsersTable> {
     );
     if (!confirm || !mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       await widget.service.deleteUser(u.id);
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(const SnackBar(content: Text('Đã xóa user')));
+      _showToast('Đã xóa user');
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(SnackBar(content: Text('Lỗi khi xóa: $e')));
+      _showToast('Lỗi khi xóa: $e', isError: true);
     }
   }
 
   /// Đổi màu "holder" của hàng — ghi thẳng xuống Firebase ngay.
   Future<void> _setColor(AppUser u, String colorKey) async {
     if (u.rowColor == colorKey) return;
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy = true);
     try {
       await widget.service.updateRowColor(docId: u.id, colorKey: colorKey);
@@ -770,7 +793,7 @@ class _UsersTableState extends State<UsersTable> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      messenger.showSnackBar(SnackBar(content: Text('Lỗi khi đổi màu: $e')));
+      _showToast('Lỗi khi đổi màu: $e', isError: true);
     }
   }
 
@@ -787,7 +810,6 @@ class _UsersTableState extends State<UsersTable> {
   }
 
   Future<void> _persistOrder(List<AppUser> ordered) async {
-    final messenger = ScaffoldMessenger.of(context);
     setState(() {
       _busy = true;
       _reordering = true;
@@ -806,7 +828,7 @@ class _UsersTableState extends State<UsersTable> {
         _reordering = false;
         _users = widget.users; // hoàn lại nếu lỗi
       });
-      messenger.showSnackBar(SnackBar(content: Text('Lỗi khi đổi thứ tự: $e')));
+      _showToast('Lỗi khi đổi thứ tự: $e', isError: true);
     }
   }
 
