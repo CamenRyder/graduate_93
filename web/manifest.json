@@ -1,6 +1,6 @@
 {
-    "name": "web_gra",
-    "short_name": "web_gra",
+    "name": "Simon_blog",
+    "short_name": "Simon_blog",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
