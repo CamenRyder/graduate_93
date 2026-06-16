@@ -1,3 +1,8 @@
+# Secrets / env (KHÔNG commit) — chứa key Supabase, nạp qua --dart-define-from-file
+env.json
+*.env
+.env
+
 # Miscellaneous
 *.class
 *.log

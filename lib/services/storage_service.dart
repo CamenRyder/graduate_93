@@ -90,6 +90,12 @@ class StorageService {
     return _storage.from(_bucket).remove([fullPath]);
   }
 
+  /// Xóa NHIỀU ảnh cùng lúc (1 request).
+  Future<void> deleteImages(List<String> fullPaths) {
+    if (fullPaths.isEmpty) return Future.value();
+    return _storage.from(_bucket).remove(fullPaths);
+  }
+
   /// Đoán Content-Type theo đuôi file để ảnh mở đúng trên trình duyệt.
   String _guessContentType(String name) {
     final lower = name.toLowerCase();

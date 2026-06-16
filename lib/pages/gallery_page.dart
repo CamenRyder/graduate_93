@@ -1,21 +1,22 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../services/gallery_meta_service.dart';
 import '../services/image_compressor.dart';
 import '../services/storage_service.dart';
+import '../theme/row_palette.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
 
-/// Kho ảnh (gallery) cho admin: upload ảnh lên Supabase Storage rồi xem lại.
+/// Kho ảnh (gallery) cho admin: upload ảnh lên Supabase Storage rồi xem lại,
+/// phân loại theo màu (lưu trên Firestore), lọc theo màu và xóa hàng loạt.
 ///
-/// - Lưới ảnh (mới nhất lên đầu), bấm 1 ảnh để xem full màn hình + zoom.
-/// - Nút nổi "Tải ảnh lên" để chọn 1 hoặc nhiều ảnh từ máy.
-/// - Bấm icon thùng rác trên mỗi ảnh để xóa.
-///
-/// Danh sách ảnh giữ TRỰC TIẾP trong [_images] (không dùng FutureBuilder) để
-/// sau khi upload/xóa có thể cập nhật state ngay, không phụ thuộc vào việc gọi
-/// lại `list()` (đôi khi trả kết quả cũ do cache CDN).
+/// - File ảnh: Supabase Storage (bucket `graduation`).
+/// - Màu của mỗi ảnh: Firestore collection `gallery` (giống `rowColor` ở bảng
+///   users — tái dùng [RowPalette]).
 class GalleryPage extends StatefulWidget {
   const GalleryPage({super.key});
 
@@ -24,27 +25,45 @@ class GalleryPage extends StatefulWidget {
 }
 
 class _GalleryPageState extends State<GalleryPage> {
-  final _service = StorageService();
+  final _storage = StorageService();
+  final _meta = GalleryMetaService();
 
   /// null = đang tải lần đầu; [] = đã tải nhưng rỗng.
   List<GalleryImage>? _images;
   String? _error;
-  bool _uploading = false;
 
-  /// Tiến độ upload nhiều ảnh: đã xong / tổng.
+  /// {tên ảnh -> khóa màu} đồng bộ realtime từ Firestore.
+  Map<String, String> _colors = {};
+  StreamSubscription<Map<String, String>>? _colorSub;
+
+  bool _uploading = false;
   int _uploadDone = 0;
   int _uploadTotal = 0;
-
-  /// Có nén ảnh trước khi tải lên không (mặc định: có).
   bool _compress = true;
 
   /// Đường dẫn ảnh đang bị xóa (để hiện spinner trên đúng ô).
   final _deleting = <String>{};
 
+  /// Bộ lọc màu: null = tất cả; '' = không màu; ngược lại = khóa màu.
+  String? _filterColor;
+
+  /// Chế độ chọn nhiều + tập ảnh đang chọn (theo tên ảnh).
+  bool _selectionMode = false;
+  final _selected = <String>{};
+
   @override
   void initState() {
     super.initState();
     _load();
+    _colorSub = _meta.watchColors().listen((colors) {
+      if (mounted) setState(() => _colors = colors);
+    });
+  }
+
+  @override
+  void dispose() {
+    _colorSub?.cancel();
+    super.dispose();
   }
 
   /// Tải (hoặc tải lại) toàn bộ danh sách ảnh từ Storage.
@@ -54,7 +73,7 @@ class _GalleryPageState extends State<GalleryPage> {
       _error = null;
     });
     try {
-      final images = await _service.listImages();
+      final images = await _storage.listImages();
       if (!mounted) return;
       setState(() => _images = images);
     } catch (e) {
@@ -63,9 +82,56 @@ class _GalleryPageState extends State<GalleryPage> {
     }
   }
 
-  /// Chọn ảnh từ máy rồi upload lần lượt lên Storage.
-  /// Ảnh upload thành công được chèn ngay vào đầu danh sách.
-  Future<void> _pickAndUpload() async {
+  /// Danh sách ảnh sau khi áp bộ lọc màu.
+  List<GalleryImage> get _visible {
+    final imgs = _images ?? const <GalleryImage>[];
+    if (_filterColor == null) return imgs;
+    return imgs
+        .where((i) => (_colors[i.name] ?? '') == _filterColor)
+        .toList();
+  }
+
+  // ── Upload ────────────────────────────────────────────────────────────────
+
+  /// Mở bảng chọn màu trước, sau đó mới chọn file & upload theo màu đó.
+  Future<void> _chooseColorThenUpload() async {
+    final colorKey = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                'Chọn màu gán cho các ảnh sắp tải lên',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            ListTile(
+              leading: const ColorDot(option: null),
+              title: const Text('Không màu'),
+              onTap: () => Navigator.pop(ctx, RowPalette.none),
+            ),
+            ...RowPalette.options.map(
+              (o) => ListTile(
+                leading: ColorDot(option: o),
+                title: Text(o.label),
+                onTap: () => Navigator.pop(ctx, o.key),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (colorKey == null) return; // người dùng đóng bảng -> hủy.
+    await _pickAndUpload(colorKey);
+  }
+
+  /// Chọn ảnh từ máy rồi upload lần lượt lên Storage; gán [uploadColor] cho
+  /// mọi ảnh tải lên ('' = không màu).
+  Future<void> _pickAndUpload(String uploadColor) async {
     final result = await FilePicker.pickFiles(
       type: FileType.image,
       allowMultiple: true,
@@ -80,6 +146,8 @@ class _GalleryPageState extends State<GalleryPage> {
     });
     final uploaded = <GalleryImage>[];
     var fail = 0;
+    var totalOriginal = 0;
+    var totalCompressed = 0;
     for (final file in result.files) {
       final bytes = file.bytes;
       if (bytes == null) {
@@ -88,7 +156,6 @@ class _GalleryPageState extends State<GalleryPage> {
         continue;
       }
       try {
-        // Nén ảnh trước (nếu bật) để giảm dung lượng & băng thông.
         var data = bytes;
         var name = file.name;
         String? contentType;
@@ -97,8 +164,10 @@ class _GalleryPageState extends State<GalleryPage> {
           data = c.bytes;
           name = c.filename;
           contentType = c.contentType;
+          totalOriginal += c.originalSize;
+          totalCompressed += c.compressedSize;
         }
-        final img = await _service.uploadImage(
+        final img = await _storage.uploadImage(
           bytes: data,
           filename: name,
           contentType: contentType,
@@ -113,16 +182,22 @@ class _GalleryPageState extends State<GalleryPage> {
     if (!mounted) return;
     setState(() {
       _uploading = false;
-      // Chèn ảnh mới lên đầu (mới nhất trước).
       _images = [...uploaded.reversed, ...?_images];
     });
-    _showToast(
-      fail == 0
-          ? 'Đã tải lên ${uploaded.length} ảnh'
-          : 'Tải lên ${uploaded.length} ảnh, lỗi $fail ảnh',
-      isError: fail > 0,
-    );
+    // Gán màu đã chọn cho tất cả ảnh vừa tải lên.
+    if (uploadColor.isNotEmpty && uploaded.isNotEmpty) {
+      await _assignColor(uploaded.map((e) => e.name), uploadColor);
+    }
+    final base = fail == 0
+        ? 'Đã tải lên ${uploaded.length} ảnh'
+        : 'Tải lên ${uploaded.length} ảnh, lỗi $fail ảnh';
+    final note = (_compress && totalOriginal > 0)
+        ? ' · nén ${_fmtSize(totalOriginal)} → ${_fmtSize(totalCompressed)}'
+        : '';
+    _showToast('$base$note', isError: fail > 0);
   }
+
+  // ── Xóa ─────────────────────────────────────────────────────────────────
 
   Future<void> _deleteImage(GalleryImage image) async {
     final confirm = await showConfirmDialog(
@@ -136,9 +211,9 @@ class _GalleryPageState extends State<GalleryPage> {
 
     setState(() => _deleting.add(image.fullPath));
     try {
-      await _service.deleteImage(image.fullPath);
+      await _storage.deleteImage(image.fullPath);
+      await _meta.deleteMetas([image.name]);
       if (!mounted) return;
-      // Server đã xác nhận xóa -> gỡ khỏi danh sách ngay.
       setState(() {
         _images?.removeWhere((i) => i.fullPath == image.fullPath);
         _deleting.remove(image.fullPath);
@@ -149,6 +224,92 @@ class _GalleryPageState extends State<GalleryPage> {
       setState(() => _deleting.remove(image.fullPath));
       _showToast('Xóa ảnh thất bại: $e', isError: true);
     }
+  }
+
+  Future<void> _bulkDelete() async {
+    final names = _selected.toList();
+    if (names.isEmpty) return;
+    final confirm = await showConfirmDialog(
+      context,
+      title: 'Xóa ${names.length} ảnh?',
+      message: 'Các ảnh đã chọn sẽ bị xóa vĩnh viễn khỏi kho.',
+      confirmLabel: 'Xóa',
+      icon: Icons.delete_outline,
+    );
+    if (!confirm || !mounted) return;
+
+    setState(() => _deleting.addAll(names));
+    try {
+      await _storage.deleteImages(names);
+      await _meta.deleteMetas(names);
+      if (!mounted) return;
+      setState(() {
+        _images?.removeWhere((i) => names.contains(i.name));
+        _deleting.removeAll(names);
+        _exitSelection();
+      });
+      _showToast('Đã xóa ${names.length} ảnh');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _deleting.removeAll(names));
+      _showToast('Xóa ảnh thất bại: $e', isError: true);
+    }
+  }
+
+  // ── Gán màu ───────────────────────────────────────────────────────────────
+
+  Future<void> _assignColor(Iterable<String> names, String colorKey) async {
+    final list = names.toList();
+    if (list.isEmpty) return;
+    // Cập nhật lạc quan cho mượt; Firestore stream sẽ đồng bộ lại sau.
+    setState(() {
+      for (final n in list) {
+        if (colorKey.isEmpty) {
+          _colors.remove(n);
+        } else {
+          _colors[n] = colorKey;
+        }
+      }
+    });
+    try {
+      await _meta.setColors(list, colorKey);
+    } catch (e) {
+      if (mounted) _showToast('Gán màu thất bại: $e', isError: true);
+    }
+  }
+
+  // ── Chọn nhiều ──────────────────────────────────────────────────────────
+
+  void _enterSelection(String name) {
+    setState(() {
+      _selectionMode = true;
+      _selected.add(name);
+    });
+  }
+
+  void _exitSelection() {
+    _selectionMode = false;
+    _selected.clear();
+  }
+
+  void _toggleSelect(String name) {
+    setState(() {
+      if (_selected.contains(name)) {
+        _selected.remove(name);
+        if (_selected.isEmpty) _selectionMode = false;
+      } else {
+        _selected.add(name);
+      }
+    });
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  String _fmtSize(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
+    }
+    return '${(bytes / 1024).toStringAsFixed(0)}KB';
   }
 
   void _showToast(String message, {bool isError = false}) {
@@ -162,41 +323,158 @@ class _GalleryPageState extends State<GalleryPage> {
       );
   }
 
+  /// Menu chọn màu (dùng cho từng ảnh và cho hàng loạt).
+  List<PopupMenuEntry<String>> _colorMenuItems() {
+    return [
+      PopupMenuItem(
+        value: RowPalette.none,
+        child: Row(
+          children: const [
+            ColorDot(option: null),
+            SizedBox(width: 10),
+            Text('Không màu'),
+          ],
+        ),
+      ),
+      ...RowPalette.options.map(
+        (o) => PopupMenuItem(
+          value: o.key,
+          child: Row(
+            children: [
+              ColorDot(option: o),
+              const SizedBox(width: 10),
+              Text(o.label),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Kho ảnh'),
-        leading: IconButton(
-          tooltip: 'Quay lại',
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/admin'),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Tải lại',
-            icon: const Icon(Icons.refresh),
-            onPressed: (_uploading || _images == null) ? null : _load,
-          ),
-          const ThemeToggleButton(),
-          const SizedBox(width: 8),
+      appBar: _selectionMode ? _selectionAppBar() : _normalAppBar(),
+      floatingActionButton: _selectionMode
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _uploading ? null : _chooseColorThenUpload,
+              icon: _uploading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.upload),
+              label: Text(
+                _uploading
+                    ? 'Đang tải $_uploadDone/$_uploadTotal...'
+                    : 'Tải ảnh lên',
+              ),
+            ),
+      body: Column(
+        children: [
+          if (_images != null && _images!.isNotEmpty) _filterBar(),
+          Expanded(child: _buildBody()),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _uploading ? null : _pickAndUpload,
-        icon: _uploading
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            : const Icon(Icons.upload),
-        label: Text(_uploading ? 'Đang tải...' : 'Tải ảnh lên'),
+    );
+  }
+
+  AppBar _normalAppBar() {
+    return AppBar(
+      title: const Text('Kho ảnh'),
+      leading: IconButton(
+        tooltip: 'Quay lại',
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () => context.go('/admin'),
       ),
-      body: _buildBody(),
+      actions: [
+        IconButton(
+          tooltip: 'Chọn nhiều ảnh',
+          icon: const Icon(Icons.checklist),
+          onPressed: (_images == null || _images!.isEmpty)
+              ? null
+              : () => setState(() => _selectionMode = true),
+        ),
+        IconButton(
+          tooltip: _compress
+              ? 'Nén ảnh: BẬT (giảm dung lượng)'
+              : 'Nén ảnh: TẮT (tải nguyên gốc)',
+          icon: Icon(_compress
+              ? Icons.compress
+              : Icons.photo_size_select_actual_outlined),
+          color: _compress ? Theme.of(context).colorScheme.primary : null,
+          onPressed:
+              _uploading ? null : () => setState(() => _compress = !_compress),
+        ),
+        IconButton(
+          tooltip: 'Tải lại',
+          icon: const Icon(Icons.refresh),
+          onPressed: (_uploading || _images == null) ? null : _load,
+        ),
+        const ThemeToggleButton(),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  AppBar _selectionAppBar() {
+    return AppBar(
+      leading: IconButton(
+        tooltip: 'Hủy chọn',
+        icon: const Icon(Icons.close),
+        onPressed: () => setState(_exitSelection),
+      ),
+      title: Text('Đã chọn ${_selected.length}'),
+      actions: [
+        PopupMenuButton<String>(
+          tooltip: 'Gán màu cho ảnh đã chọn',
+          icon: const Icon(Icons.palette_outlined),
+          enabled: _selected.isNotEmpty,
+          onSelected: (key) => _assignColor(_selected.toList(), key),
+          itemBuilder: (_) => _colorMenuItems(),
+        ),
+        IconButton(
+          tooltip: 'Xóa ảnh đã chọn',
+          icon: const Icon(Icons.delete_outline),
+          onPressed: _selected.isEmpty ? null : _bulkDelete,
+        ),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  /// Thanh lọc theo màu (Wrap các chip giống bộ lọc màu của dashboard).
+  Widget _filterBar() {
+    Widget chip(String? value, String label, RowColorOption? option) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: ChoiceChip(
+          selected: _filterColor == value,
+          avatar: value == null ? null : ColorDot(option: option),
+          label: Text(label),
+          onSelected: (_) => setState(() => _filterColor = value),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 56,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        children: [
+          chip(null, 'Tất cả', null),
+          chip(RowPalette.none, 'Không màu', null),
+          ...RowPalette.options.map((o) => chip(o.key, o.label, o)),
+        ],
+      ),
     );
   }
 
@@ -213,28 +491,45 @@ class _GalleryPageState extends State<GalleryPage> {
         child: Text('Chưa có ảnh — bấm "Tải ảnh lên" để thêm'),
       );
     }
+    final visible = _visible;
+    if (visible.isEmpty) {
+      return const Center(child: Text('Không có ảnh nào khớp màu đang lọc'));
+    }
     return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 220,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
       ),
-      itemCount: images.length,
-      itemBuilder: (context, i) => _tile(images[i]),
+      itemCount: visible.length,
+      itemBuilder: (context, i) => _tile(visible[i]),
     );
   }
 
   Widget _tile(GalleryImage image) {
     final deleting = _deleting.contains(image.fullPath);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          GestureDetector(
-            onTap: deleting ? null : () => _openFullScreen(image),
-            child: Container(
+    final selected = _selected.contains(image.name);
+    final colorKey = _colors[image.name] ?? '';
+    final option = RowPalette.byKey(colorKey);
+
+    void onTap() {
+      if (_selectionMode) {
+        _toggleSelect(image.name);
+      } else {
+        _openFullScreen(image);
+      }
+    }
+
+    return GestureDetector(
+      onTap: deleting ? null : onTap,
+      onLongPress: deleting ? null : () => _enterSelection(image.name),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(
               color: Colors.black12,
               child: Image.network(
                 image.url,
@@ -247,30 +542,99 @@ class _GalleryPageState extends State<GalleryPage> {
                 ),
               ),
             ),
-          ),
-          // Lớp phủ + spinner khi đang xóa ô này.
-          if (deleting)
-            Container(
-              color: Colors.black54,
-              alignment: Alignment.center,
-              child: const CircularProgressIndicator(color: Colors.white),
-            ),
-          Positioned(
-            top: 4,
-            right: 4,
-            child: Material(
-              color: Colors.black54,
-              shape: const CircleBorder(),
-              child: IconButton(
-                tooltip: 'Xóa ảnh',
-                icon: const Icon(Icons.delete_outline,
-                    color: Colors.white, size: 20),
-                visualDensity: VisualDensity.compact,
-                onPressed: deleting ? null : () => _deleteImage(image),
+
+            // Chấm màu phân loại ở góc trên-trái (chỉ khi ảnh có màu).
+            if (option != null)
+              Positioned(
+                top: 6,
+                left: 6,
+                child: _badge(child: ColorDot(option: option, size: 16)),
               ),
-            ),
-          ),
-        ],
+
+            // Lớp phủ + spinner khi đang xóa.
+            if (deleting)
+              Container(
+                color: Colors.black54,
+                alignment: Alignment.center,
+                child: const CircularProgressIndicator(color: Colors.white),
+              ),
+
+            // Chế độ chọn: ô tick; ngược lại: nút gán màu + xóa.
+            if (_selectionMode)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Icon(
+                  selected ? Icons.check_circle : Icons.circle_outlined,
+                  color: selected
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.white,
+                  size: 26,
+                ),
+              )
+            else ...[
+              Positioned(
+                top: 4,
+                right: 4,
+                child: _badge(
+                  circle: true,
+                  child: PopupMenuButton<String>(
+                    tooltip: 'Gán màu',
+                    icon: const Icon(Icons.palette_outlined,
+                        color: Colors.white, size: 20),
+                    padding: EdgeInsets.zero,
+                    onSelected: (key) => _assignColor([image.name], key),
+                    itemBuilder: (_) => _colorMenuItems(),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 4,
+                right: 4,
+                child: _badge(
+                  circle: true,
+                  child: IconButton(
+                    tooltip: 'Xóa ảnh',
+                    icon: const Icon(Icons.delete_outline,
+                        color: Colors.white, size: 20),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _deleteImage(image),
+                  ),
+                ),
+              ),
+            ],
+
+            // Khung sáng khi được chọn.
+            if (selected)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.25),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Nền tối bo tròn để icon/chấm màu nổi trên ảnh.
+  Widget _badge({required Widget child, bool circle = false}) {
+    return Material(
+      color: Colors.black54,
+      shape: circle
+          ? const CircleBorder()
+          : RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Padding(
+        padding: EdgeInsets.all(circle ? 0 : 4),
+        child: child,
       ),
     );
   }
