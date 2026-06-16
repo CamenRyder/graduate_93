@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../controllers/auth_controller.dart';
 import '../models/app_user.dart';
@@ -7,6 +10,39 @@ import '../services/firestore_service.dart';
 import '../theme/row_palette.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
+
+// ── Định nghĩa cột ──────────────────────────────────────────────────────────
+
+class _Col {
+  const _Col(this.key, this.label, this.width);
+  final String key;
+  final String label;
+  final double width;
+}
+
+const _kCols = [
+  _Col('id',          'ID',          80),
+  _Col('name',        'Name',        150),
+  _Col('who',         'who',         120),
+  _Col('me',          'me',          120),
+  _Col('email',       'Email',       190),
+  _Col('phone',       'Phone',       120),
+  _Col('address',     'Address',     150),
+  _Col('message',     'Message',     200),
+  _Col('des1',        'Des_1',       110),
+  _Col('des2',        'Des_2',       110),
+  _Col('des3',        'Des_3',       110),
+  _Col('timeMeeting', 'timeMeeting', 120),
+  _Col('timeEnding',  'timeEnding',  120),
+  _Col('active',      'Active',       70),
+  _Col('confirm',     'Confirm',      80),
+  _Col('updated',     'Cập nhật',   130),
+];
+
+const _kPrefsOrder  = 'admin_col_order';
+const _kPrefsHidden = 'admin_col_hidden';
+
+// ── EditSession ──────────────────────────────────────────────────────────────
 
 /// Trạng thái chia sẻ giữa [AdminPage] (chứa nút nổi) và [UsersTable]
 /// (giữ logic thêm/sửa). Khi đang thêm/sửa 1 hàng, nút "Thêm user" sẽ
@@ -70,12 +106,69 @@ class _AdminPageState extends State<AdminPage> {
   /// còn lại = đúng khóa màu (vd 'blue').
   String? _colorFilter;
 
+  // Thứ tự cột (list key); mặc định theo _kCols.
+  List<String> _colOrder = _kCols.map((c) => c.key).toList();
+  // Tập key các cột đang ẩn.
+  Set<String> _hiddenCols = {};
+
   bool get _hasFilter =>
       _nameQuery.trim().isNotEmpty ||
       _meetingQuery.trim().isNotEmpty ||
       _activeFilter != null ||
       _confirmFilter != null ||
       _colorFilter != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadColPrefs();
+  }
+
+  Future<void> _loadColPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rawOrder  = prefs.getString(_kPrefsOrder);
+    final rawHidden = prefs.getString(_kPrefsHidden);
+    if (!mounted) return;
+    setState(() {
+      if (rawOrder != null) {
+        final saved = (jsonDecode(rawOrder) as List).cast<String>();
+        // Thêm cột mới (nếu có) vào cuối, bỏ cột đã xóa.
+        final validKeys = _kCols.map((c) => c.key).toSet();
+        _colOrder = [
+          ...saved.where(validKeys.contains),
+          ...validKeys.difference(saved.toSet()),
+        ];
+      }
+      if (rawHidden != null) {
+        _hiddenCols = (jsonDecode(rawHidden) as List).cast<String>().toSet();
+      }
+    });
+  }
+
+  Future<void> _saveColPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    await Future.wait([
+      prefs.setString(_kPrefsOrder,  jsonEncode(_colOrder)),
+      prefs.setString(_kPrefsHidden, jsonEncode(_hiddenCols.toList())),
+    ]);
+  }
+
+  void _showColumnPicker() {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _ColumnPickerDialog(
+        colOrder:   List.of(_colOrder),
+        hiddenCols: Set.of(_hiddenCols),
+        onApply: (order, hidden) {
+          setState(() {
+            _colOrder   = order;
+            _hiddenCols = hidden;
+          });
+          _saveColPrefs();
+        },
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -272,6 +365,11 @@ class _AdminPageState extends State<AdminPage> {
       appBar: AppBar(
         title: const Text('Quản lý Users'),
         actions: [
+          IconButton(
+            tooltip: 'Ẩn / hiện & sắp xếp cột',
+            icon: const Icon(Icons.view_column_outlined),
+            onPressed: _showColumnPicker,
+          ),
           const ThemeToggleButton(),
           IconButton(
             tooltip: 'Đăng xuất',
@@ -356,6 +454,8 @@ class _AdminPageState extends State<AdminPage> {
                           addToken: _addToken,
                           reorderEnabled: reorderEnabled,
                           session: _session,
+                          colOrder:   _colOrder,
+                          hiddenCols: _hiddenCols,
                         ),
                       ),
               ),
@@ -377,6 +477,8 @@ class UsersTable extends StatefulWidget {
     required this.addToken,
     required this.reorderEnabled,
     required this.session,
+    required this.colOrder,
+    required this.hiddenCols,
   });
 
   final List<AppUser> users;
@@ -389,47 +491,36 @@ class UsersTable extends StatefulWidget {
   /// Trạng thái chia sẻ với nút nổi "Lưu" ở [AdminPage].
   final EditSession session;
 
+  /// Thứ tự hiển thị các cột (list key theo _kCols).
+  final List<String> colOrder;
+
+  /// Tập key các cột đang ẩn.
+  final Set<String> hiddenCols;
+
   @override
   State<UsersTable> createState() => _UsersTableState();
 }
 
 class _UsersTableState extends State<UsersTable> {
-  // Độ rộng từng cột (px).
-  static const double _wHandle = 40;
-  static const double _wIndex = 44;
-  static const double _wId = 80;
-  static const double _wName = 150;
-  static const double _wWho = 120;
-  static const double _wMe = 120;
-  static const double _wEmail = 190;
-  static const double _wPhone = 120;
-  static const double _wAddress = 150;
-  static const double _wMessage = 200;
-  static const double _wDes = 110;
-  static const double _wTimeM = 120;
-  static const double _wTimeE = 120;
-  static const double _wActive = 70;
-  static const double _wConfirm = 80;
-  static const double _wUpdated = 130;
+  // Độ rộng cột cố định (không thể ẩn).
+  static const double _wHandle  = 40;
+  static const double _wIndex   = 44;
   static const double _wActions = 190;
+
+  /// Các cột hiện tại theo đúng thứ tự + chỉ lấy cột không ẩn.
+  List<_Col> get _visibleCols {
+    final colByKey = {for (final c in _kCols) c.key: c};
+    return [
+      for (final key in widget.colOrder)
+        if (!widget.hiddenCols.contains(key) && colByKey.containsKey(key))
+          colByKey[key]!,
+    ];
+  }
 
   double get _totalWidth =>
       _wHandle +
       _wIndex +
-      _wId +
-      _wName +
-      _wWho +
-      _wMe +
-      _wEmail +
-      _wPhone +
-      _wAddress +
-      _wMessage +
-      _wDes * 3 +
-      _wTimeM +
-      _wTimeE +
-      _wActive +
-      _wConfirm +
-      _wUpdated +
+      _visibleCols.fold(0.0, (s, c) => s + c.width) +
       _wActions;
 
   /// Bản sao cục bộ của danh sách để cập nhật ngay khi kéo-thả (optimistic).
@@ -952,23 +1043,7 @@ class _UsersTableState extends State<UsersTable> {
             children: [
               _cell(_wHandle, const SizedBox()),
               h(_wIndex, '#'),
-              h(_wId, 'ID'),
-              h(_wName, 'Name'),
-              h(_wWho, 'who'),
-              h(_wMe, 'Me'),
-              h(_wEmail, 'Email'),
-              h(_wPhone, 'Phone'),
-              h(_wAddress, 'Address'),
-              h(_wMessage, 'Message'),
-              h(_wDes, 'Des_1'),
-              h(_wDes, 'Des_2'),
-              h(_wDes, 'Des_3'),
-              h(_wTimeM, 'timeMeeting'),
-              h(_wTimeE, 'timeEnding'),
-              h(_wActive, 'Active'),
-              h(_wConfirm, 'Confirm'),
-              h(_wUpdated, 'Cập nhật'),
-              // Chừa chỗ cho cột thao tác (được vẽ ở lớp phủ neo bên dưới).
+              for (final col in _visibleCols) h(col.width, col.label),
               const SizedBox(width: _wActions),
             ],
           ),
@@ -1013,7 +1088,6 @@ class _UsersTableState extends State<UsersTable> {
               _dragHandle(i),
               _cell(_wIndex, Text(widget.reorderEnabled ? '$i' : '${u.index}')),
               ...(editing ? _editCells() : _readCells(u)),
-              _cell(_wUpdated, Text(_formatTime(u.timeUpdated))),
               const SizedBox(width: _wActions),
             ],
           ),
@@ -1045,7 +1119,6 @@ class _UsersTableState extends State<UsersTable> {
               _cell(_wHandle, const SizedBox()),
               _cell(_wIndex, Text('${_users.length}')),
               ..._editCells(),
-              _cell(_wUpdated, const Text('-')),
               const SizedBox(width: _wActions),
             ],
           ),
@@ -1079,53 +1152,51 @@ class _UsersTableState extends State<UsersTable> {
     );
   }
 
-  List<Widget> _editCells() => [
-        _cell(_wId, _idEditField()),
-        _cell(_wName, _miniField(_nameCtrl)),
-        _cell(_wWho, _miniField(_whoCtrl)),
-        _cell(_wMe, _miniField(_meCtrl)),
-        _cell(_wEmail, _miniField(_emailCtrl)),
-        _cell(_wPhone, _miniField(_phoneCtrl)),
-        _cell(_wAddress, _miniField(_addressCtrl)),
-        _cell(_wMessage, _expandableField(_messageCtrl, 'Message')),
-        _cell(_wDes, _expandableField(_des1Ctrl, 'Des_1')),
-        _cell(_wDes, _expandableField(_des2Ctrl, 'Des_2')),
-        _cell(_wDes, _expandableField(_des3Ctrl, 'Des_3')),
-        _cell(_wTimeM, _miniField(_timeMeetingCtrl)),
-        _cell(_wTimeE, _miniField(_timeEndingCtrl)),
-        _cell(
-          _wActive,
-          Switch(
-            value: _editActive,
-            onChanged: (v) => setState(() => _editActive = v),
-          ),
-        ),
-        _cell(
-          _wConfirm,
-          Switch(
-            value: _editConfirm,
-            onChanged: (v) => setState(() => _editConfirm = v),
-          ),
-        ),
-      ];
+  List<Widget> _editCells() {
+    Widget build(String key, double w) => switch (key) {
+      'id'          => _cell(w, _idEditField()),
+      'name'        => _cell(w, _miniField(_nameCtrl)),
+      'who'         => _cell(w, _miniField(_whoCtrl)),
+      'me'          => _cell(w, _miniField(_meCtrl)),
+      'email'       => _cell(w, _miniField(_emailCtrl)),
+      'phone'       => _cell(w, _miniField(_phoneCtrl)),
+      'address'     => _cell(w, _miniField(_addressCtrl)),
+      'message'     => _cell(w, _expandableField(_messageCtrl, 'Message')),
+      'des1'        => _cell(w, _expandableField(_des1Ctrl, 'Des_1')),
+      'des2'        => _cell(w, _expandableField(_des2Ctrl, 'Des_2')),
+      'des3'        => _cell(w, _expandableField(_des3Ctrl, 'Des_3')),
+      'timeMeeting' => _cell(w, _miniField(_timeMeetingCtrl)),
+      'timeEnding'  => _cell(w, _miniField(_timeEndingCtrl)),
+      'active'      => _cell(w, Switch(value: _editActive,  onChanged: (v) => setState(() => _editActive  = v))),
+      'confirm'     => _cell(w, Switch(value: _editConfirm, onChanged: (v) => setState(() => _editConfirm = v))),
+      'updated'     => _cell(w, const Text('-')),
+      _             => const SizedBox.shrink(),
+    };
+    return [for (final c in _visibleCols) build(c.key, c.width)];
+  }
 
-  List<Widget> _readCells(AppUser u) => [
-        _cell(_wId, Text('${u.userId}')),
-        _cell(_wName, _readText(u.name)),
-        _cell(_wWho, _readText(u.who)),
-        _cell(_wMe, _readText(u.me)),
-        _cell(_wEmail, _readText(u.email)),
-        _cell(_wPhone, _readText(u.phone)),
-        _cell(_wAddress, _readText(u.address)),
-        _cell(_wMessage, _readText(u.message)),
-        _cell(_wDes, _readText(u.des1)),
-        _cell(_wDes, _readText(u.des2)),
-        _cell(_wDes, _readText(u.des3)),
-        _cell(_wTimeM, _readText(u.timeMeeting)),
-        _cell(_wTimeE, _readText(u.timeEnding)),
-        _cell(_wActive, _boolIcon(u.isActive)),
-        _cell(_wConfirm, _boolIcon(u.isConfirm)),
-      ];
+  List<Widget> _readCells(AppUser u) {
+    Widget build(String key, double w) => switch (key) {
+      'id'          => _cell(w, Text('${u.userId}')),
+      'name'        => _cell(w, _readText(u.name)),
+      'who'         => _cell(w, _readText(u.who)),
+      'me'          => _cell(w, _readText(u.me)),
+      'email'       => _cell(w, _readText(u.email)),
+      'phone'       => _cell(w, _readText(u.phone)),
+      'address'     => _cell(w, _readText(u.address)),
+      'message'     => _cell(w, _readText(u.message)),
+      'des1'        => _cell(w, _readText(u.des1)),
+      'des2'        => _cell(w, _readText(u.des2)),
+      'des3'        => _cell(w, _readText(u.des3)),
+      'timeMeeting' => _cell(w, _readText(u.timeMeeting)),
+      'timeEnding'  => _cell(w, _readText(u.timeEnding)),
+      'active'      => _cell(w, _boolIcon(u.isActive)),
+      'confirm'     => _cell(w, _boolIcon(u.isConfirm)),
+      'updated'     => _cell(w, Text(_formatTime(u.timeUpdated))),
+      _             => const SizedBox.shrink(),
+    };
+    return [for (final c in _visibleCols) build(c.key, c.width)];
+  }
 
   Widget _cell(double width, Widget child) {
     return Container(
@@ -1400,6 +1471,107 @@ class _TextEditorDialogState extends State<_TextEditorDialog> {
     );
   }
 }
+
+// ── Dialog ẩn/hiện & sắp xếp cột ────────────────────────────────────────────
+
+class _ColumnPickerDialog extends StatefulWidget {
+  const _ColumnPickerDialog({
+    required this.colOrder,
+    required this.hiddenCols,
+    required this.onApply,
+  });
+
+  final List<String> colOrder;
+  final Set<String> hiddenCols;
+  final void Function(List<String> order, Set<String> hidden) onApply;
+
+  @override
+  State<_ColumnPickerDialog> createState() => _ColumnPickerDialogState();
+}
+
+class _ColumnPickerDialogState extends State<_ColumnPickerDialog> {
+  late List<String> _order  = List.of(widget.colOrder);
+  late Set<String>  _hidden = Set.of(widget.hiddenCols);
+
+  String _label(String key) =>
+      _kCols.firstWhere((c) => c.key == key, orElse: () => _Col(key, key, 0)).label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Cột hiển thị'),
+      contentPadding: const EdgeInsets.fromLTRB(8, 16, 8, 0),
+      content: SizedBox(
+        width: 300,
+        child: ReorderableListView.builder(
+          shrinkWrap: true,
+          buildDefaultDragHandles: false,
+          itemCount: _order.length,
+          onReorder: (oldIdx, newIdx) {
+            setState(() {
+              if (newIdx > oldIdx) newIdx--;
+              final key = _order.removeAt(oldIdx);
+              _order.insert(newIdx, key);
+            });
+            widget.onApply(_order, _hidden);
+          },
+          itemBuilder: (ctx, i) {
+            final key    = _order[i];
+            final hidden = _hidden.contains(key);
+            return ListTile(
+              key: ValueKey(key),
+              dense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              leading: ReorderableDragStartListener(
+                index: i,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.grab,
+                  child: Icon(Icons.drag_handle,
+                      color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+              title: Text(
+                _label(key),
+                style: hidden
+                    ? TextStyle(color: theme.colorScheme.onSurfaceVariant,
+                                decoration: TextDecoration.lineThrough)
+                    : null,
+              ),
+              trailing: Switch(
+                value: !hidden,
+                onChanged: (_) {
+                  setState(() {
+                    if (hidden) { _hidden.remove(key); } else { _hidden.add(key); }
+                  });
+                  widget.onApply(_order, _hidden);
+                },
+              ),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            setState(() {
+              _order  = _kCols.map((c) => c.key).toList();
+              _hidden = {};
+            });
+            widget.onApply(_order, _hidden);
+          },
+          child: const Text('Đặt lại'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Xong'),
+        ),
+      ],
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 
 class _ErrorView extends StatelessWidget {
   const _ErrorView({required this.error});
