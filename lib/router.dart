@@ -9,6 +9,7 @@ import 'pages/countdown_page.dart';
 import 'pages/guide_page.dart';
 import 'pages/invite_detail_page.dart';
 import 'pages/login_page.dart';
+import 'pages/love_page.dart';
 import 'pages/scheduled_page.dart';
 import 'pages/welcome_page.dart';
 
@@ -87,6 +88,10 @@ final router = GoRouter(
     GoRoute(
       path: '/admin',
       builder: (context, state) => const AdminPage(),
+    ),
+    GoRoute(
+      path: '/love',
+      builder: (context, state) => const LovePage(),
     ),
   ],
 );
