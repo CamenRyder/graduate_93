@@ -38,12 +38,53 @@ class GuidePage extends StatelessWidget {
         onTap: () => _openFullScreen(context),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
-          child: Container(
-            width: double.infinity,
-            color: Colors.black,
-            child: _image(context, BoxFit.contain),
+          child: Stack(
+            children: [
+              Container(
+                width: double.infinity,
+                color: Colors.black,
+                child: _image(context, BoxFit.contain),
+              ),
+              // Chỉ báo: nhấn vào ảnh để xem & phóng to.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: _zoomHint(),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Dải chỉ báo ở đáy ảnh — gợi ý người dùng bấm để xem & phóng to.
+  Widget _zoomHint() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: [Colors.black87, Colors.transparent],
+        ),
+      ),
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.zoom_in, color: Colors.white, size: 18),
+          SizedBox(width: 6),
+          Text(
+            'Nhấn vào ảnh để xem & phóng to',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
