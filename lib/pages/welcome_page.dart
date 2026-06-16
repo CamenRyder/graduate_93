@@ -25,8 +25,8 @@ class WelcomePage extends StatefulWidget {
 
 class _WelcomePageState extends State<WelcomePage> {
   /// Khoảng nghỉ sau khi gõ xong 1 đoạn (trước khi gõ đoạn kế / trước khi fade).
-  static const Duration _gap = Duration(seconds: 3);
-  static const Duration _fadeDuration = Duration(milliseconds: 600);
+  static const Duration _gap = Duration(milliseconds: 1500);
+  static const Duration _fadeDuration = Duration(milliseconds: 400);
 
   // Lời nhắn cá nhân hóa: "em" -> field `who`, "anh" -> field `me` của user.
   late final List<String> _messages = _buildMessages();

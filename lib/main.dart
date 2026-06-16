@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
@@ -19,6 +20,13 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // Cache Firestore trong IndexedDB: lần 2+ trả data tức thì rồi sync ngầm.
+  // synchronizeTabs = true: nhiều tab mở cùng lúc vẫn nhất quán.
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
+
   // Đọc lựa chọn theme + trạng thái đăng nhập đã lưu trước khi vẽ giao diện.
   await Future.wait([
     themeController.load(),
@@ -26,7 +34,7 @@ Future<void> main() async {
     guestController.load(),
   ]);
 
-  runApp(const MyApp()); 
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {

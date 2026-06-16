@@ -30,7 +30,7 @@ class GuidePage extends StatelessWidget {
         children: [
           _greenButton('Xem vị trí trên Google Maps', _openMap),
           const SizedBox(height: 10),
-          _greenButton('quay lại', () => context.go('/scheduled')),
+          _greenButton('Quay lại', () => context.go('/scheduled')),
         ],
       ),
       // Ảnh lấp đầy phần trên; bấm để xem full màn hình.

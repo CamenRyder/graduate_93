@@ -116,7 +116,7 @@ class _ScheduledPageState extends State<ScheduledPage> {
           Text.rich(
             TextSpan(
               children: [
-                TextSpan(text: 'Em đã nhận thông tin nhe. Hẹn $_who lúc '),
+                TextSpan(text: '$_me đã nhận thông tin nhe. Hẹn $_who lúc '),
                 TextSpan(
                   text: _timeMeeting,
                   style: const TextStyle(fontWeight: FontWeight.bold),
@@ -128,7 +128,7 @@ class _ScheduledPageState extends State<ScheduledPage> {
                 ),
                 TextSpan(
                   text: ' ở trường $_me nhe. Sơ đồ trường $_me và vị trí trên '
-                      'map t có cung cấp bên dưới. Hôm thứ 6 nếu $_who không rõ '
+                      'map $_me có cung cấp bên dưới. Hôm thứ 6 nếu $_who không rõ '
                       'thông tin thì cứ quét QR mã và xem thông tin tổng hợp '
                       'nhoa',
                 ),
