@@ -6,6 +6,7 @@ import 'controllers/guest_controller.dart';
 import 'pages/admin_page.dart';
 import 'pages/auth_page.dart';
 import 'pages/countdown_page.dart';
+import 'pages/gallery_page.dart';
 import 'pages/guide_page.dart';
 import 'pages/invite_detail_page.dart';
 import 'pages/login_page.dart';
@@ -35,8 +36,8 @@ final router = GoRouter(
     final guestAuthed = guestController.isAuthenticated;
     final confirmed = guestController.confirmed;
 
-    // Bảo vệ /admin: chưa đăng nhập -> về /login.
-    if (loc == '/admin' && !loggedIn) return '/login';
+    // Bảo vệ /admin + /gallery: chưa đăng nhập -> về /login.
+    if ((loc == '/admin' || loc == '/gallery') && !loggedIn) return '/login';
     // Đã đăng nhập mà mở /login -> vào /admin.
     if (loc == '/login' && loggedIn) return '/admin';
 
@@ -88,6 +89,10 @@ final router = GoRouter(
     GoRoute(
       path: '/admin',
       builder: (context, state) => const AdminPage(),
+    ),
+    GoRoute(
+      path: '/gallery',
+      builder: (context, state) => const GalleryPage(),
     ),
     GoRoute(
       path: '/love',

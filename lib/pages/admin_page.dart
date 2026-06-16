@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../controllers/auth_controller.dart';
@@ -184,7 +185,11 @@ class _AdminPageState extends State<AdminPage> {
     final name = _nameQuery.trim().toLowerCase();
     final meeting = _meetingQuery.trim().toLowerCase();
     return users.where((u) {
-      if (name.isNotEmpty && !u.name.toLowerCase().contains(name)) return false;
+      if (name.isNotEmpty &&
+          !u.name.toLowerCase().contains(name) &&
+          !u.userId.toString().contains(name)) {
+        return false;
+      }
       if (_activeFilter != null && u.isActive != _activeFilter) return false;
       if (_confirmFilter != null && u.isConfirm != _confirmFilter) return false;
       if (_colorFilter != null) {
@@ -232,7 +237,7 @@ class _AdminPageState extends State<AdminPage> {
             controller: _searchCtrl,
             onChanged: (v) => setState(() => _nameQuery = v),
             decoration: const InputDecoration(
-              labelText: 'Tìm theo Name',
+              labelText: 'Tìm theo Name / Mã ID',
               prefixIcon: Icon(Icons.search),
               isDense: true,
             ),
@@ -365,6 +370,11 @@ class _AdminPageState extends State<AdminPage> {
       appBar: AppBar(
         title: const Text('Quản lý Users'),
         actions: [
+          IconButton(
+            tooltip: 'Kho ảnh',
+            icon: const Icon(Icons.photo_library_outlined),
+            onPressed: () => context.go('/gallery'),
+          ),
           IconButton(
             tooltip: 'Ẩn / hiện & sắp xếp cột',
             icon: const Icon(Icons.view_column_outlined),

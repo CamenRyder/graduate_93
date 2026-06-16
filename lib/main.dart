@@ -2,12 +2,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'controllers/auth_controller.dart';
 import 'controllers/guest_controller.dart';
 import 'controllers/theme_controller.dart';
 import 'firebase_options.dart';
 import 'router.dart';
+import 'supabase_config.dart';
 import 'theme.dart';
 
 Future<void> main() async {
@@ -19,6 +21,15 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Supabase: dùng cho kho ảnh (gallery). Chỉ khởi tạo khi đã điền cấu hình
+  // để app không crash lúc chưa cắm URL/khóa.
+  if (SupabaseConfig.isConfigured) {
+    await Supabase.initialize(
+      url: SupabaseConfig.url,
+      publishableKey: SupabaseConfig.anonKey,
+    );
+  }
 
   // Cache Firestore trong IndexedDB: lần 2+ trả data tức thì rồi sync ngầm.
   // synchronizeTabs = true: nhiều tab mở cùng lúc vẫn nhất quán.

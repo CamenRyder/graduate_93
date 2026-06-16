@@ -23,6 +23,9 @@ dependencies:
   # Interop web (mở link Facebook/Zalo/tel). Đã có sẵn trong pubspec.lock
   # (transitive) nên khai báo trực tiếp không làm đổi version đã khóa.
   web: ^1.1.1
+  file_picker: ^11.0.2
+  supabase_flutter: ^2.14.2
+  image: ^4.8.0
 
 dev_dependencies:
   flutter_test:

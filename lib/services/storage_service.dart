@@ -1,0 +1,102 @@
+import 'dart:typed_data';
+
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../supabase_config.dart';
+
+/// 1 ảnh trong gallery (đọc từ Supabase Storage).
+class GalleryImage {
+  const GalleryImage({
+    required this.name,
+    required this.fullPath,
+    required this.url,
+  });
+
+  /// Tên file hiển thị (vd "1718500000000_so-do.png").
+  final String name;
+
+  /// Đường dẫn trong bucket (dùng để xóa). Ở đây trùng với [name] vì lưu phẳng.
+  final String fullPath;
+
+  /// Link công khai để hiển thị ảnh.
+  final String url;
+}
+
+/// Lớp truy cập Supabase Storage cho bucket `gallery`.
+///
+/// Dùng cho tính năng "kho ảnh": admin upload ảnh, app hiển thị lại để
+/// sau này tái sử dụng (vd cho blog).
+///
+/// LƯU Ý: cần tạo bucket [SupabaseConfig.galleryBucket] (đặt Public để đọc
+/// công khai) + cấu hình Storage policies cho phép upload/list/xóa.
+class StorageService {
+  SupabaseStorageClient get _storage => Supabase.instance.client.storage;
+
+  String get _bucket => SupabaseConfig.galleryBucket;
+
+  /// Upload 1 ảnh từ bytes lên bucket với tên `<timestamp>_<filename>`.
+  /// Trả về [GalleryImage] vừa tạo (đã có link công khai).
+  Future<GalleryImage> uploadImage({
+    required Uint8List bytes,
+    required String filename,
+    String? contentType,
+  }) async {
+    // Tiền tố timestamp để tên không trùng và giữ thứ tự upload.
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final safeName = filename.replaceAll(RegExp(r'[^\w.\-]'), '_');
+    final path = '${stamp}_$safeName';
+
+    await _storage.from(_bucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: contentType ?? _guessContentType(safeName),
+            upsert: false,
+          ),
+        );
+
+    return GalleryImage(
+      name: path,
+      fullPath: path,
+      url: _storage.from(_bucket).getPublicUrl(path),
+    );
+  }
+
+  /// Liệt kê toàn bộ ảnh trong bucket, mới nhất lên đầu.
+  Future<List<GalleryImage>> listImages() async {
+    final objects = await _storage.from(_bucket).list(
+          searchOptions: const SearchOptions(
+            // Supabase trả tối đa 100 mặc định; nâng lên cho kho lớn hơn.
+            limit: 1000,
+            sortBy: SortBy(column: 'name', order: 'desc'),
+          ),
+        );
+
+    return objects
+        // Bỏ qua "thư mục giữ chỗ" rỗng nếu có (.emptyFolderPlaceholder).
+        .where((o) => o.name != '.emptyFolderPlaceholder')
+        .map(
+          (o) => GalleryImage(
+            name: o.name,
+            fullPath: o.name,
+            url: _storage.from(_bucket).getPublicUrl(o.name),
+          ),
+        )
+        .toList();
+  }
+
+  /// Xóa 1 ảnh theo đường dẫn trong bucket.
+  Future<void> deleteImage(String fullPath) {
+    return _storage.from(_bucket).remove([fullPath]);
+  }
+
+  /// Đoán Content-Type theo đuôi file để ảnh mở đúng trên trình duyệt.
+  String _guessContentType(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.bmp')) return 'image/bmp';
+    return 'image/jpeg';
+  }
+}
