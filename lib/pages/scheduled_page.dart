@@ -60,13 +60,24 @@ class _ScheduledPageState extends State<ScheduledPage> {
   }
 
   // Xưng hô / giờ hẹn; field trống thì lùi về chữ gốc để câu không hụt.
-  String get _who => _orElse(_user?.who, 'anh');
-  String get _me => _orElse(_user?.me, 'em');
+  // Ưu tiên dữ liệu đã lưu lúc đăng nhập (guestController) để vẫn cá nhân hóa
+  // được kể cả khi fetch lại _user chậm hoặc trả về thiếu who/me.
+  String get _who => _first([_user?.who, guestController.who], 'anh');
+  String get _me => _first([_user?.me, guestController.me], 'em');
   String get _timeMeeting => _orElse(_user?.timeMeeting, '11h30');
 
   static String _orElse(String? value, String fallback) {
     final trimmed = value?.trim() ?? '';
     return trimmed.isEmpty ? fallback : trimmed;
+  }
+
+  /// Lấy chuỗi không-rỗng đầu tiên trong [values], không có thì trả [fallback].
+  static String _first(List<String?> values, String fallback) {
+    for (final v in values) {
+      final trimmed = v?.trim() ?? '';
+      if (trimmed.isNotEmpty) return trimmed;
+    }
+    return fallback;
   }
 
   @override

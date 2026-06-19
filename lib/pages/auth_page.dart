@@ -206,9 +206,9 @@ class _AuthPageState extends State<AuthPage> {
                           )
                         : _form(
                             key: const ValueKey('phone'),
-                            prompt: 'Ohhh ${_displayName()}. Em rất vui vì '
-                                'anh/chị đăng nhập web của em. '
-                                'anh/chị nhập sđt nha',
+                            prompt: 'Ohhh ${_displayName()}. ${_me()} rất vui vì '
+                                '${_who()} đăng nhập web của ${_me()}. '
+                                '${_who()} nhập sđt nha',
                             field: _phoneField(),
                             valid: _phoneValid,
                             icon: Icons.check,
@@ -235,6 +235,16 @@ class _AuthPageState extends State<AuthPage> {
   String _displayName() {
     final name = _matched?.name.trim() ?? '';
     return name.isEmpty ? 'anh/chị' : name;
+  }
+
+  String _who() {
+    final who = _matched?.who.trim() ?? '';
+    return who.isEmpty ? 'anh/chị' : who;
+  }
+
+  String _me() {
+    final me = _matched?.me.trim() ?? '';
+    return me.isEmpty ? 'em' : me;
   }
 
   /// Khối lời nhắn + ô nhập + nút hành động, dùng chung cho 2 bước.
