@@ -54,16 +54,16 @@ class ContactFooter extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Liên hệ Minh Hiếu',
-                  style: Theme.of(ctx).textTheme.titleMedium,
-                ),
-              ),
-            ),
+            // Padding(
+            //   padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+            //   child: Align(
+            //     alignment: Alignment.centerLeft,
+            //     child: Text(
+            //       'Liên hệ Minh Hiếu',
+            //       style: Theme.of(ctx).textTheme.titleMedium,
+            //     ),
+            //   ),
+            // ),
             _ContactTile(
               icon: Icons.facebook,
               label: 'Messenger Facebook',
@@ -110,7 +110,7 @@ class _ContactTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon),
+      leading: null , // Icon(icon),
       title: Text(label),
       onTap: onTap,
     );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -19,16 +21,35 @@ class ScheduledPage extends StatefulWidget {
 }
 
 class _ScheduledPageState extends State<ScheduledPage> {
+  /// Mốc đích đếm ngược: 09:00 ngày tốt nghiệp 26/06/2026 (giờ địa phương).
+  static final DateTime _gradDay = DateTime(2026, 6, 26, 9);
+
   final _service = FirestoreService();
 
   AppUser? _user;
   bool _loading = true;
   String? _error;
 
+  Timer? _timer;
+  Duration _remaining = Duration.zero;
+
   @override
   void initState() {
     super.initState();
+    _tick();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     _loadUser();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _tick() {
+    if (!mounted) return;
+    setState(() => _remaining = _gradDay.difference(DateTime.now()));
   }
 
   Future<void> _loadUser() async {
@@ -149,6 +170,8 @@ class _ScheduledPageState extends State<ScheduledPage> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
+          _countdown(), 
+          const SizedBox(height: 28),
           // Đoạn 2 — in nghiêng.
           Text(
             'Không cần mua quà hay hoa đâu, $_me muốn chụp 1 2 tấm hình cho '
@@ -156,7 +179,8 @@ class _ScheduledPageState extends State<ScheduledPage> {
             style: style.copyWith(fontStyle: FontStyle.italic),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 28),
+          // Đếm ngược tới ngày tốt nghiệp + dòng ngày nhỏ bên dưới.
           // Nút mở màn hướng dẫn di chuyển — style nút giống màn đăng nhập.
           FilledButton(
             style: FilledButton.styleFrom(
@@ -171,4 +195,95 @@ class _ScheduledPageState extends State<ScheduledPage> {
     );
   }
 
+  /// Đồng hồ đếm ngược (Ngày / Giờ / Phút / Giây) tới ngày tốt nghiệp,
+  /// kèm dòng chữ nhỏ ghi ngày bên dưới.
+  Widget _countdown() {
+    final colorScheme = Theme.of(context).colorScheme;
+    // Tới giờ rồi (hoặc đã qua) thì giữ ở 0 để không hiện số âm.
+    final d = _remaining.isNegative ? Duration.zero : _remaining;
+    final days = d.inDays;
+    final hours = d.inHours % 24;
+    final minutes = d.inMinutes % 60;
+    final seconds = d.inSeconds % 60;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _unit(days, 'Ngày'),
+              _sep(),
+              _unit(hours, 'Giờ'),
+              _sep(),
+              _unit(minutes, 'Phút'),
+              _sep(),
+              _unit(seconds, 'Giây'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Thời gian: 26/06/2026',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Một ô số đếm ngược: số to bên trên, nhãn nhỏ bên dưới.
+  Widget _unit(int value, String label) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 56,
+          child: Text(
+            value.toString().padLeft(2, '0'),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              height: 1,
+              color: colorScheme.onSurface,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Dấu ":" ngăn giữa các ô số.
+  Widget _sep() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Text(
+        ':',
+        style: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.w300,
+          color: colorScheme.primary,
+        ),
+      ),
+    );
+  }
 }
