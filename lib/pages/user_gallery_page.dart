@@ -111,7 +111,8 @@ class _UserGalleryPageState extends State<UserGalleryPage> {
       pageBuilder: (ctx, _, _) => FullScreenGallery(
         images: list,
         initialIndex: start < 0 ? 0 : start,
-        colors: Map.of(_colors),
+        // Khách không thấy màu phân loại -> map rỗng để ẩn chấm màu trong viewer.
+        colors: const {},
         onDownload: _saveImageToDevice,
       ),
     );
