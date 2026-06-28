@@ -9,6 +9,7 @@ class GuestCache {
   static const String _kName = 'guest_name';
   static const String _kWho = 'guest_who';
   static const String _kMe = 'guest_me';
+  static const String _kRowColor = 'guest_row_color';
   static const String _kConfirmed = 'guest_confirmed';
 
   static Future<void> save({
@@ -17,6 +18,7 @@ class GuestCache {
     required String name,
     required String who,
     required String me,
+    required String rowColor,
     required bool confirmed,
   }) async {
     final prefs = await SharedPreferences.getInstance();
@@ -25,6 +27,7 @@ class GuestCache {
     await prefs.setString(_kName, name);
     await prefs.setString(_kWho, who);
     await prefs.setString(_kMe, me);
+    await prefs.setString(_kRowColor, rowColor);
     await prefs.setBool(_kConfirmed, confirmed);
   }
 
@@ -41,6 +44,7 @@ class GuestCache {
         String? name,
         String? who,
         String? me,
+        String? rowColor,
         bool? confirmed,
       })> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -50,6 +54,7 @@ class GuestCache {
       name: prefs.getString(_kName),
       who: prefs.getString(_kWho),
       me: prefs.getString(_kMe),
+      rowColor: prefs.getString(_kRowColor),
       confirmed: prefs.getBool(_kConfirmed),
     );
   }
@@ -61,6 +66,7 @@ class GuestCache {
     await prefs.remove(_kName);
     await prefs.remove(_kWho);
     await prefs.remove(_kMe);
+    await prefs.remove(_kRowColor);
     await prefs.remove(_kConfirmed);
   }
 }

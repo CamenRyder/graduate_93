@@ -96,6 +96,11 @@ class StorageService {
     return _storage.from(_bucket).remove(fullPaths);
   }
 
+  /// Tải bytes của 1 ảnh từ bucket (dùng để lưu ảnh về máy / đóng gói ZIP).
+  Future<Uint8List> downloadBytes(String fullPath) {
+    return _storage.from(_bucket).download(fullPath);
+  }
+
   /// Đoán Content-Type theo đuôi file để ảnh mở đúng trên trình duyệt.
   String _guessContentType(String name) {
     final lower = name.toLowerCase();

@@ -13,6 +13,7 @@ class GuestController extends ChangeNotifier {
   String _email = '';
   String _who = '';
   String _me = '';
+  String _rowColor = '';
   bool _confirmed = false;
 
   /// Đã nhập đúng code (đã vào được trang chủ) hay chưa.
@@ -26,6 +27,10 @@ class GuestController extends ChangeNotifier {
   String get who => _who;
   String get me => _me;
 
+  /// Khóa màu "holder" của khách (field `rowColor`), vd "blue". Rỗng = không có
+  /// màu -> khách không được xem ảnh nào của admin (xem [UserGalleryPage]).
+  String get rowColor => _rowColor;
+
   /// Khách đã bấm "Gửi" xác nhận tham dự (isConfirm == true) hay chưa.
   /// Dùng để sau khi auth thì vào thẳng màn lịch hẹn thay vì trang chào.
   bool get confirmed => _confirmed;
@@ -38,6 +43,7 @@ class GuestController extends ChangeNotifier {
     _email = cached.email ?? '';
     _who = cached.who ?? '';
     _me = cached.me ?? '';
+    _rowColor = cached.rowColor ?? '';
     _confirmed = cached.confirmed ?? false;
     notifyListeners();
   }
@@ -49,6 +55,7 @@ class GuestController extends ChangeNotifier {
     required String name,
     String who = '',
     String me = '',
+    String rowColor = '',
     bool confirmed = false,
   }) async {
     await GuestCache.save(
@@ -57,6 +64,7 @@ class GuestController extends ChangeNotifier {
       name: name,
       who: who,
       me: me,
+      rowColor: rowColor,
       confirmed: confirmed,
     );
     _code = code;
@@ -64,6 +72,7 @@ class GuestController extends ChangeNotifier {
     _name = name;
     _who = who;
     _me = me;
+    _rowColor = rowColor;
     _confirmed = confirmed;
     notifyListeners();
   }
@@ -84,6 +93,7 @@ class GuestController extends ChangeNotifier {
     _name = '';
     _who = '';
     _me = '';
+    _rowColor = '';
     _confirmed = false;
     notifyListeners();
   }

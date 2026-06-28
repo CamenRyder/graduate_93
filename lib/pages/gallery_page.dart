@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -7,8 +8,10 @@ import 'package:go_router/go_router.dart';
 import '../services/gallery_meta_service.dart';
 import '../services/image_compressor.dart';
 import '../services/storage_service.dart';
+import '../services/web_download.dart';
 import '../theme/row_palette.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/fullscreen_gallery.dart';
 import '../widgets/theme_toggle_button.dart';
 
 /// Kho ảnh (gallery) cho admin: upload ảnh lên Supabase Storage rồi xem lại,
@@ -50,6 +53,9 @@ class _GalleryPageState extends State<GalleryPage> {
   /// Chế độ chọn nhiều + tập ảnh đang chọn (theo tên ảnh).
   bool _selectionMode = false;
   final _selected = <String>{};
+
+  /// Đang đóng gói + tải ZIP (tải nhiều ảnh theo màu / theo lựa chọn).
+  bool _zipping = false;
 
   @override
   void initState() {
@@ -278,6 +284,189 @@ class _GalleryPageState extends State<GalleryPage> {
     }
   }
 
+  // ── Tải ảnh về máy ────────────────────────────────────────────────────────
+
+  /// Tải bytes 1 ảnh rồi lưu về máy. Ném lỗi để nơi gọi (viewer) tự báo.
+  Future<void> _saveImageToDevice(GalleryImage image) async {
+    final bytes = await _storage.downloadBytes(image.fullPath);
+    downloadBytesToDevice(
+      bytes,
+      _friendlyName(image.name),
+      mimeType: _mimeForName(image.name),
+    );
+  }
+
+  /// Mở bảng chọn màu rồi tải toàn bộ ảnh thuộc màu đó về máy dưới dạng 1 ZIP.
+  Future<void> _chooseColorThenDownloadAll() async {
+    const allSentinel = '__all__';
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                'Tải ảnh về máy theo màu (gói ZIP)',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.select_all),
+              title: const Text('Tất cả ảnh'),
+              onTap: () => Navigator.pop(ctx, allSentinel),
+            ),
+            ListTile(
+              leading: const ColorDot(option: null),
+              title: const Text('Không màu'),
+              onTap: () => Navigator.pop(ctx, RowPalette.none),
+            ),
+            ...RowPalette.options.map(
+              (o) => ListTile(
+                leading: ColorDot(option: o),
+                title: Text(o.label),
+                onTap: () => Navigator.pop(ctx, o.key),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return; // người dùng đóng bảng -> hủy.
+
+    final all = _images ?? const <GalleryImage>[];
+    final List<GalleryImage> group;
+    final String fileLabel;
+    if (choice == allSentinel) {
+      group = all.toList();
+      fileLabel = 'tat-ca';
+    } else if (choice == RowPalette.none) {
+      group = all.where((i) => (_colors[i.name] ?? '').isEmpty).toList();
+      fileLabel = 'khong-mau';
+    } else {
+      group = all.where((i) => (_colors[i.name] ?? '') == choice).toList();
+      fileLabel = choice; // khóa màu là ASCII (blue/green/...) -> hợp tên file.
+    }
+    await _downloadGroupAsZip(group, fileLabel);
+  }
+
+  /// Tải các ảnh đang chọn về máy dưới dạng 1 ZIP.
+  Future<void> _downloadSelected() async {
+    final names = _selected.toSet();
+    final group =
+        (_images ?? const <GalleryImage>[]).where((i) => names.contains(i.name)).toList();
+    await _downloadGroupAsZip(group, 'da-chon');
+  }
+
+  /// Tải lần lượt bytes từng ảnh, đóng gói thành ZIP rồi lưu về máy. Hiển thị
+  /// hộp thoại tiến trình (có nút Hủy) trong lúc tải.
+  Future<void> _downloadGroupAsZip(
+      List<GalleryImage> images, String fileLabel) async {
+    if (images.isEmpty) {
+      _showToast('Không có ảnh nào để tải');
+      return;
+    }
+
+    final done = ValueNotifier<int>(0);
+    var cancelled = false;
+    BuildContext? dialogCtx;
+    setState(() => _zipping = true);
+
+    // Hộp thoại tiến trình (không tự đóng được, có nút Hủy).
+    unawaited(showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        dialogCtx = ctx;
+        return AlertDialog(
+          title: const Text('Đang chuẩn bị file ZIP'),
+          content: ValueListenableBuilder<int>(
+            valueListenable: done,
+            builder: (_, v, _) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(value: v / images.length),
+                const SizedBox(height: 12),
+                Text('$v / ${images.length} ảnh'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                cancelled = true;
+                Navigator.pop(ctx);
+              },
+              child: const Text('Hủy'),
+            ),
+          ],
+        );
+      },
+    ));
+
+    try {
+      final archive = Archive();
+      final used = <String>{};
+      for (final image in images) {
+        if (cancelled) break;
+        final bytes = await _storage.downloadBytes(image.fullPath);
+        final entryName = _uniqueName(_friendlyName(image.name), used);
+        // noCompress: ảnh đã nén sẵn (JPEG/PNG...) nên "store" cho nhanh.
+        archive.addFile(ArchiveFile.noCompress(entryName, bytes.length, bytes));
+        done.value++;
+      }
+      if (cancelled) {
+        _showToast('Đã hủy tải ZIP');
+        return;
+      }
+      final zipBytes = ZipEncoder().encodeBytes(archive);
+      downloadBytesToDevice(
+        zipBytes,
+        'kho-anh-$fileLabel.zip',
+        mimeType: 'application/zip',
+      );
+      _showToast('Đã tải ${images.length} ảnh (ZIP)');
+    } catch (e) {
+      _showToast('Tải ZIP thất bại: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _zipping = false);
+      if (dialogCtx != null && dialogCtx!.mounted) {
+        Navigator.pop(dialogCtx!); // đóng hộp thoại tiến trình nếu còn mở.
+      }
+    }
+  }
+
+  /// Bỏ tiền tố timestamp `<digits>_` do lúc upload thêm vào -> tên gốc dễ đọc.
+  String _friendlyName(String storageName) =>
+      storageName.replaceFirst(RegExp(r'^\d+_'), '');
+
+  /// Bảo đảm tên file không trùng trong ZIP: thêm hậu tố " (2)", " (3)"...
+  String _uniqueName(String name, Set<String> used) {
+    if (used.add(name)) return name;
+    final dot = name.lastIndexOf('.');
+    final base = dot == -1 ? name : name.substring(0, dot);
+    final ext = dot == -1 ? '' : name.substring(dot);
+    var i = 2;
+    String candidate;
+    do {
+      candidate = '$base ($i)$ext';
+      i++;
+    } while (!used.add(candidate));
+    return candidate;
+  }
+
+  /// Đoán Content-Type theo đuôi file để trình duyệt lưu/mở đúng định dạng.
+  String _mimeForName(String name) {
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.bmp')) return 'image/bmp';
+    return 'image/jpeg';
+  }
+
   // ── Chọn nhiều ──────────────────────────────────────────────────────────
 
   void _enterSelection(String name) {
@@ -396,6 +585,14 @@ class _GalleryPageState extends State<GalleryPage> {
       ),
       actions: [
         IconButton(
+          tooltip: 'Tải ảnh về máy (ZIP) theo màu',
+          icon: const Icon(Icons.download_outlined),
+          onPressed:
+              (_images == null || _images!.isEmpty || _uploading || _zipping)
+                  ? null
+                  : _chooseColorThenDownloadAll,
+        ),
+        IconButton(
           tooltip: 'Chọn nhiều ảnh',
           icon: const Icon(Icons.checklist),
           onPressed: (_images == null || _images!.isEmpty)
@@ -439,6 +636,11 @@ class _GalleryPageState extends State<GalleryPage> {
           enabled: _selected.isNotEmpty,
           onSelected: (key) => _assignColor(_selected.toList(), key),
           itemBuilder: (_) => _colorMenuItems(),
+        ),
+        IconButton(
+          tooltip: 'Tải ảnh đã chọn về máy (ZIP)',
+          icon: const Icon(Icons.download_outlined),
+          onPressed: (_selected.isEmpty || _zipping) ? null : _downloadSelected,
         ),
         IconButton(
           tooltip: 'Xóa ảnh đã chọn',
@@ -639,38 +841,22 @@ class _GalleryPageState extends State<GalleryPage> {
     );
   }
 
-  /// Mở ảnh full màn hình: nền đen, phóng to/thu nhỏ được, bấm để đóng.
+  /// Mở ảnh full màn hình ở chế độ "xem chi tiết": vuốt ngang để qua lại các
+  /// ảnh khác (theo đúng danh sách đang lọc), chụm/lăn để phóng to, và tải ảnh
+  /// đang xem về máy.
   void _openFullScreen(GalleryImage image) {
+    final list = _visible;
+    final start = list.indexWhere((i) => i.fullPath == image.fullPath);
     showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Đóng',
       barrierColor: Colors.black,
-      pageBuilder: (ctx, _, _) => Stack(
-        children: [
-          Positioned.fill(
-            child: InteractiveViewer(
-              minScale: 0.5,
-              maxScale: 5,
-              child: GestureDetector(
-                onTap: () => Navigator.pop(ctx),
-                child: Center(
-                  child: Image.network(image.url, fit: BoxFit.contain),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 8,
-            right: 8,
-            child: SafeArea(
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                onPressed: () => Navigator.pop(ctx),
-              ),
-            ),
-          ),
-        ],
+      pageBuilder: (ctx, _, _) => FullScreenGallery(
+        images: list,
+        initialIndex: start < 0 ? 0 : start,
+        colors: Map.of(_colors),
+        onDownload: _saveImageToDevice,
       ),
     );
   }

@@ -26,6 +26,10 @@ dependencies:
   file_picker: ^11.0.2
   supabase_flutter: ^2.14.2
   image: ^4.8.0
+  # Đóng gói ZIP cho tính năng "tải tất cả ảnh theo màu" ở Kho ảnh. Đã có sẵn
+  # trong pubspec.lock (transitive qua `image`) nên khai báo trực tiếp không
+  # làm đổi version đã khóa.
+  archive: ^4.0.9
 
 dev_dependencies:
   flutter_test:

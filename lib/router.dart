@@ -12,6 +12,7 @@ import 'pages/invite_detail_page.dart';
 import 'pages/login_page.dart';
 import 'pages/love_page.dart';
 import 'pages/scheduled_page.dart';
+import 'pages/user_gallery_page.dart';
 import 'pages/welcome_page.dart';
 
 /// Cấu hình điều hướng theo URL.
@@ -53,7 +54,7 @@ final router = GoRouter(
     }
 
     // Các trang chỉ dành cho khách đã xác thực -> chưa xác thực thì về nhập code.
-    const guestOnly = ['/welcome', '/invite', '/scheduled', '/guide'];
+    const guestOnly = ['/welcome', '/invite', '/scheduled', '/guide', '/photos'];
     if (guestOnly.contains(loc) && !guestAuthed) return '/';
     return null;
   },
@@ -77,6 +78,10 @@ final router = GoRouter(
     GoRoute(
       path: '/guide',
       builder: (context, state) => const GuidePage(),
+    ),
+    GoRoute(
+      path: '/photos',
+      builder: (context, state) => const UserGalleryPage(),
     ),
     GoRoute(
       path: '/countdown',

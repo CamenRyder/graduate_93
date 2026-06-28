@@ -17,6 +17,6 @@ For help getting started with Flutter development, view the
 samples, guidance on mobile development, and a full API reference.
 
 # build web thui
-flutter build web --release
+flutter build web --release --dart-define-from-file=env.json
 firebase deploy --only hosting
 

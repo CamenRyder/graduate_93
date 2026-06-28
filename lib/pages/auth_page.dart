@@ -97,6 +97,7 @@ class _AuthPageState extends State<AuthPage> {
           name: user.name,
           who: user.who,
           me: user.me,
+          rowColor: user.rowColor,
           confirmed: user.isConfirm,
         );
         if (!mounted) return;

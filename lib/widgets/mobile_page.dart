@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'contact_footer.dart';
 import 'guest_logout_button.dart';
+import 'guest_photos_button.dart';
 import 'theme_toggle_button.dart';
 
 /// Khung layout dùng chung cho các màn hướng tới điện thoại.
@@ -46,6 +47,7 @@ class MobilePage extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    GuestPhotosButton(),
                     GuestLogoutButton(),
                     ThemeToggleButton(),
                   ],
