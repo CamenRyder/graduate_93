@@ -12,12 +12,14 @@ class TypingText extends StatefulWidget {
     this.text, {
     super.key,
     this.style,
+    this.textAlign,
     this.charDuration = const Duration(milliseconds: 30),
     this.onCompleted,
   });
 
   final String text;
   final TextStyle? style;
+  final TextAlign? textAlign;
 
   /// Khoảng cách giữa 2 ký tự.
   final Duration charDuration;
@@ -76,6 +78,7 @@ class _TypingTextState extends State<TypingText> {
     final rest = _chars.skip(_shown).join();
 
     return Text.rich(
+      textAlign: widget.textAlign,
       TextSpan(
         style: widget.style,
         children: [
