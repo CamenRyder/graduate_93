@@ -25,6 +25,7 @@ class AppUser {
     required this.timeMeeting,
     required this.timeEnding,
     required this.timeUpdated,
+    required this.showAllPhotos,
   });
 
   /// ID của document (Firestore tự sinh, vd: "SKysEciyPSJdF6FvmkdB").
@@ -61,6 +62,9 @@ class AppUser {
   final String timeEnding;
   final DateTime? timeUpdated;
 
+  /// Cho phép xem toàn bộ ảnh (true) hay chỉ xem theo màu sắc (false).
+  final bool showAllPhotos;
+
   /// Tạo [AppUser] từ 1 document Firestore.
   factory AppUser.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
@@ -87,6 +91,7 @@ class AppUser {
       timeMeeting: data['timeMeeting']?.toString() ?? '',
       timeEnding: data['timeEnding']?.toString() ?? '',
       timeUpdated: (data['time_updated'] as Timestamp?)?.toDate(),
+      showAllPhotos: data['showAllPhotos'] as bool? ?? false,
     );
   }
 
@@ -112,6 +117,7 @@ class AppUser {
       'timeEnding': timeEnding,
       'time_updated':
           timeUpdated == null ? null : Timestamp.fromDate(timeUpdated!),
+      'showAllPhotos': showAllPhotos,
     };
   }
 }

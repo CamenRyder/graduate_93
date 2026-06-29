@@ -37,6 +37,7 @@ const _kCols = [
   _Col('timeEnding',  'timeEnding',  120),
   _Col('active',      'Active',       70),
   _Col('confirm',     'Confirm',      80),
+  _Col('showAllPhotos', 'Xem toàn bộ', 90),
   _Col('updated',     'Cập nhật',   130),
 ];
 
@@ -567,6 +568,7 @@ class _UsersTableState extends State<UsersTable> {
   final _timeEndingCtrl = TextEditingController();
   bool _editActive = false;
   bool _editConfirm = false;
+  bool _editShowAllPhotos = false;
 
   /// Màu hàng hiện hành của hàng đang thêm/sửa — giữ lại để khi lưu form
   /// không vô tình xóa màu (màu được đổi qua nút chọn màu riêng).
@@ -684,6 +686,7 @@ class _UsersTableState extends State<UsersTable> {
     }
     _editActive = false;
     _editConfirm = false;
+    _editShowAllPhotos = false;
     _editRowColor = '';
   }
 
@@ -703,6 +706,7 @@ class _UsersTableState extends State<UsersTable> {
     _timeEndingCtrl.text = u.timeEnding;
     _editActive = u.isActive;
     _editConfirm = u.isConfirm;
+    _editShowAllPhotos = u.showAllPhotos;
     _editRowColor = u.rowColor;
   }
 
@@ -753,6 +757,7 @@ class _UsersTableState extends State<UsersTable> {
       timeMeeting: _timeMeetingCtrl.text.trim(),
       timeEnding: _timeEndingCtrl.text.trim(),
       timeUpdated: null,
+      showAllPhotos: _editShowAllPhotos,
     );
   }
 
@@ -1185,6 +1190,7 @@ class _UsersTableState extends State<UsersTable> {
       'timeEnding'  => _cell(w, _miniField(_timeEndingCtrl)),
       'active'      => _cell(w, Switch(value: _editActive,  onChanged: (v) => setState(() => _editActive  = v))),
       'confirm'     => _cell(w, Switch(value: _editConfirm, onChanged: (v) => setState(() => _editConfirm = v))),
+      'showAllPhotos' => _cell(w, Switch(value: _editShowAllPhotos, onChanged: (v) => setState(() => _editShowAllPhotos = v))),
       'updated'     => _cell(w, const Text('-')),
       _             => const SizedBox.shrink(),
     };
@@ -1208,6 +1214,7 @@ class _UsersTableState extends State<UsersTable> {
       'timeEnding'  => _cell(w, _readText(u.timeEnding)),
       'active'      => _cell(w, _boolIcon(u.isActive)),
       'confirm'     => _cell(w, _boolIcon(u.isConfirm)),
+      'showAllPhotos' => _cell(w, _boolIcon(u.showAllPhotos)),
       'updated'     => _cell(w, Text(_formatTime(u.timeUpdated))),
       _             => const SizedBox.shrink(),
     };
