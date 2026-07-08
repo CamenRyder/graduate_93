@@ -15,6 +15,7 @@ class GuestController extends ChangeNotifier {
   String _me = '';
   String _rowColor = '';
   bool _confirmed = false;
+  bool _showAllPhotos = false;
 
   /// Đã nhập đúng code (đã vào được trang chủ) hay chưa.
   bool get isAuthenticated => _code != null;
@@ -35,6 +36,9 @@ class GuestController extends ChangeNotifier {
   /// Dùng để sau khi auth thì vào thẳng màn lịch hẹn thay vì trang chào.
   bool get confirmed => _confirmed;
 
+  /// Khách được phép xem toàn bộ ảnh (true) hay chỉ xem theo màu sắc (false).
+  bool get showAllPhotos => _showAllPhotos;
+
   /// Nạp trạng thái đã lưu lúc khởi động app.
   Future<void> load() async {
     final cached = await GuestCache.load();
@@ -45,6 +49,7 @@ class GuestController extends ChangeNotifier {
     _me = cached.me ?? '';
     _rowColor = cached.rowColor ?? '';
     _confirmed = cached.confirmed ?? false;
+    _showAllPhotos = cached.showAllPhotos ?? false;
     notifyListeners();
   }
 
@@ -57,6 +62,7 @@ class GuestController extends ChangeNotifier {
     String me = '',
     String rowColor = '',
     bool confirmed = false,
+    bool showAllPhotos = false,
   }) async {
     await GuestCache.save(
       code: code,
@@ -66,6 +72,7 @@ class GuestController extends ChangeNotifier {
       me: me,
       rowColor: rowColor,
       confirmed: confirmed,
+      showAllPhotos: showAllPhotos,
     );
     _code = code;
     _email = email;
@@ -74,6 +81,7 @@ class GuestController extends ChangeNotifier {
     _me = me;
     _rowColor = rowColor;
     _confirmed = confirmed;
+    _showAllPhotos = showAllPhotos;
     notifyListeners();
   }
 
@@ -95,6 +103,7 @@ class GuestController extends ChangeNotifier {
     _me = '';
     _rowColor = '';
     _confirmed = false;
+    _showAllPhotos = false;
     notifyListeners();
   }
 }

@@ -11,6 +11,7 @@ class GuestCache {
   static const String _kMe = 'guest_me';
   static const String _kRowColor = 'guest_row_color';
   static const String _kConfirmed = 'guest_confirmed';
+  static const String _kShowAllPhotos = 'guest_show_all_photos';
 
   static Future<void> save({
     required int code,
@@ -20,6 +21,7 @@ class GuestCache {
     required String me,
     required String rowColor,
     required bool confirmed,
+    required bool showAllPhotos,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_kCode, code);
@@ -29,6 +31,7 @@ class GuestCache {
     await prefs.setString(_kMe, me);
     await prefs.setString(_kRowColor, rowColor);
     await prefs.setBool(_kConfirmed, confirmed);
+    await prefs.setBool(_kShowAllPhotos, showAllPhotos);
   }
 
   /// Cập nhật riêng cờ đã-xác-nhận (sau khi khách bấm "Gửi").
@@ -46,6 +49,7 @@ class GuestCache {
         String? me,
         String? rowColor,
         bool? confirmed,
+        bool? showAllPhotos,
       })> load() async {
     final prefs = await SharedPreferences.getInstance();
     return (
@@ -56,6 +60,7 @@ class GuestCache {
       me: prefs.getString(_kMe),
       rowColor: prefs.getString(_kRowColor),
       confirmed: prefs.getBool(_kConfirmed),
+      showAllPhotos: prefs.getBool(_kShowAllPhotos),
     );
   }
 
@@ -68,5 +73,6 @@ class GuestCache {
     await prefs.remove(_kMe);
     await prefs.remove(_kRowColor);
     await prefs.remove(_kConfirmed);
+    await prefs.remove(_kShowAllPhotos);
   }
 }

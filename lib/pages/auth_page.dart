@@ -99,6 +99,7 @@ class _AuthPageState extends State<AuthPage> {
           me: user.me,
           rowColor: user.rowColor,
           confirmed: user.isConfirm,
+          showAllPhotos: user.showAllPhotos,
         );
         if (!mounted) return;
         router.go('/welcome');
@@ -146,7 +147,9 @@ class _AuthPageState extends State<AuthPage> {
         name: user.name,
         who: user.who,
         me: user.me,
+        rowColor: user.rowColor,
         confirmed: user.isConfirm,
+        showAllPhotos: user.showAllPhotos,
       );
       if (!mounted) return;
       router.go('/welcome');

@@ -106,7 +106,9 @@ class _CountdownPageState extends State<CountdownPage> {
           name: user.name,
           who: user.who,
           me: user.me,
+          rowColor: user.rowColor,
           confirmed: user.isConfirm,
+          showAllPhotos: user.showAllPhotos,
         );
         if (!mounted) return;
         router.go('/welcome');
@@ -156,7 +158,9 @@ class _CountdownPageState extends State<CountdownPage> {
         name: user.name,
         who: user.who,
         me: user.me,
+        rowColor: user.rowColor,
         confirmed: user.isConfirm,
+        showAllPhotos: user.showAllPhotos,
       );
       if (!mounted) return;
       router.go('/welcome');

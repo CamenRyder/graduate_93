@@ -1240,6 +1240,8 @@ class _FloatingHeartState extends State<_FloatingHeart>
   @override
   void initState() {
     super.initState();
+    _x = 0.0;
+    _size = 9.0;
     _randomize();
     final dur = Duration(milliseconds: 4200 + _rng.nextInt(2400));
     _ctrl = AnimationController(vsync: this, duration: dur);

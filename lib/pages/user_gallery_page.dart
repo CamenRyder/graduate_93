@@ -40,8 +40,8 @@ class _UserGalleryPageState extends State<UserGalleryPage> {
   Map<String, String> _colors = {};
   StreamSubscription<Map<String, String>>? _colorSub;
 
-  /// Khách có màu hợp lệ (nằm trong bảng màu) hay không.
-  bool get _hasColor => RowPalette.byKey(_myColor) != null;
+  /// Khách có thể xem ảnh: hoặc được xem toàn bộ, hoặc có màu hợp lệ.
+  bool get _hasColor => guestController.showAllPhotos || RowPalette.byKey(_myColor) != null;
 
   @override
   void initState() {
@@ -75,9 +75,13 @@ class _UserGalleryPageState extends State<UserGalleryPage> {
     }
   }
 
-  /// Danh sách ảnh thuộc đúng màu của khách.
+  /// Danh sách ảnh: nếu khách được xem toàn bộ thì hiện tất cả,
+  /// nếu không thì chỉ hiện ảnh cùng màu.
   List<GalleryImage> get _visible {
     final imgs = _images ?? const <GalleryImage>[];
+    if (guestController.showAllPhotos) {
+      return imgs;
+    }
     return imgs.where((i) => (_colors[i.name] ?? '') == _myColor).toList();
   }
 
