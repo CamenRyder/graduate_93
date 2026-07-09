@@ -15,6 +15,15 @@ import 'theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Nới cache ảnh trong RAM cho tính năng tải trước (precache) của kho ảnh:
+  // mỗi thư mục được tải trước ~30 ảnh, nhiều thư mục cộng lại dễ vượt mức
+  // mặc định của Flutter (1000 ảnh / 100MB) khiến ảnh vừa tải trước bị đẩy
+  // ra khỏi cache trước khi kịp hiển thị. Nâng lên 2000 ảnh / 400MB để
+  // thumbnail các thư mục nằm yên trong cache khi chuyển qua lại.
+  PaintingBinding.instance.imageCache
+    ..maximumSize = 2000
+    ..maximumSizeBytes = 400 << 20; // 400MB
+
   // URL "sạch": /admin thay vì /#/admin
   usePathUrlStrategy();
 

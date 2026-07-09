@@ -5,8 +5,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../services/gallery_folder_service.dart';
 import '../services/gallery_meta_service.dart';
 import '../services/image_compressor.dart';
+import '../services/image_precache_service.dart';
 import '../services/storage_service.dart';
 import '../services/web_download.dart';
 import '../theme/row_palette.dart';
@@ -15,11 +17,18 @@ import '../widgets/fullscreen_gallery.dart';
 import '../widgets/theme_toggle_button.dart';
 
 /// Kho ảnh (gallery) cho admin: upload ảnh lên Supabase Storage rồi xem lại,
-/// phân loại theo màu (lưu trên Firestore), lọc theo màu và xóa hàng loạt.
+/// sắp xếp theo THƯ MỤC, phân loại theo màu (lưu trên Firestore), lọc theo
+/// màu và xóa hàng loạt.
 ///
-/// - File ảnh: Supabase Storage (bucket `graduation`).
-/// - Màu của mỗi ảnh: Firestore collection `gallery` (giống `rowColor` ở bảng
-///   users — tái dùng [RowPalette]).
+/// - File ảnh: Supabase Storage (bucket `graduation`) — lưu phẳng, KHÔNG
+///   di chuyển file; "thư mục" chỉ là metadata trên Firestore.
+/// - Màu + thư mục của mỗi ảnh: Firestore collection `gallery` (giống
+///   `rowColor` ở bảng users — tái dùng [RowPalette]).
+/// - Danh sách thư mục: Firestore collection `gallery_folders`.
+///
+/// Màn hình mở ra ở chế độ TỔNG QUAN THƯ MỤC (các thẻ thư mục + thẻ ảo
+/// "Chưa phân loại"); bấm vào 1 thư mục mới thấy lưới ảnh với đầy đủ tính
+/// năng cũ (gán màu, lọc, chọn nhiều, tải ZIP, xem toàn màn hình...).
 class GalleryPage extends StatefulWidget {
   const GalleryPage({super.key});
 
@@ -30,6 +39,14 @@ class GalleryPage extends StatefulWidget {
 class _GalleryPageState extends State<GalleryPage> {
   final _storage = StorageService();
   final _meta = GalleryMetaService();
+  final _folderService = GalleryFolderService();
+  final _precache = ImagePrecacheService.instance;
+
+  /// Id "ảo" của thư mục Chưa phân loại (ảnh không có field `folder`).
+  static const String _unsorted = '';
+
+  /// Số ảnh tải trước cho MỖI thư mục ngay khi vào màn tổng quan.
+  static const int _precachePerFolder = 30;
 
   /// null = đang tải lần đầu; [] = đã tải nhưng rỗng.
   List<GalleryImage>? _images;
@@ -37,7 +54,25 @@ class _GalleryPageState extends State<GalleryPage> {
 
   /// {tên ảnh -> khóa màu} đồng bộ realtime từ Firestore.
   Map<String, String> _colors = {};
-  StreamSubscription<Map<String, String>>? _colorSub;
+
+  /// {tên ảnh -> id thư mục} đồng bộ realtime từ Firestore.
+  Map<String, String> _imageFolders = {};
+  StreamSubscription<GalleryMetaSnapshot>? _metaSub;
+
+  /// Danh sách thư mục đồng bộ realtime từ Firestore.
+  List<GalleryFolder> _folders = [];
+  StreamSubscription<List<GalleryFolder>>? _folderSub;
+
+  /// Thư mục đang mở: null = màn tổng quan thư mục; [_unsorted] = "Chưa phân
+  /// loại"; còn lại = id thư mục thật.
+  String? _openFolderId;
+
+  /// Cờ "đã nhận dữ liệu lần đầu" của 2 stream — đủ cả mới precache/tổng quan.
+  bool _foldersReady = false;
+  bool _metasReady = false;
+
+  /// Đã precache 30 ảnh đầu mỗi thư mục cho lần tải này chưa.
+  bool _didOverviewPrecache = false;
 
   bool _uploading = false;
   int _uploadDone = 0;
@@ -61,14 +96,29 @@ class _GalleryPageState extends State<GalleryPage> {
   void initState() {
     super.initState();
     _load();
-    _colorSub = _meta.watchColors().listen((colors) {
-      if (mounted) setState(() => _colors = colors);
+    _metaSub = _meta.watchMetas().listen((snap) {
+      if (!mounted) return;
+      setState(() {
+        _colors = snap.colors;
+        _imageFolders = snap.folders;
+      });
+      _metasReady = true;
+      _maybePrecacheOverview();
+    });
+    _folderSub = _folderService.watchFolders().listen((folders) {
+      if (!mounted) return;
+      setState(() => _folders = folders);
+      _foldersReady = true;
+      _maybePrecacheOverview();
     });
   }
 
   @override
   void dispose() {
-    _colorSub?.cancel();
+    _metaSub?.cancel();
+    _folderSub?.cancel();
+    // Rời trang thì bỏ các ảnh CHƯA kịp tải trước (ảnh đã cache vẫn giữ).
+    _precache.cancelPending();
     super.dispose();
   }
 
@@ -77,24 +127,99 @@ class _GalleryPageState extends State<GalleryPage> {
     setState(() {
       _images = null;
       _error = null;
+      _didOverviewPrecache = false; // cho phép precache lại sau khi tải lại.
     });
     try {
       final images = await _storage.listImages();
       if (!mounted) return;
       setState(() => _images = images);
+      _maybePrecacheOverview();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '$e');
     }
   }
 
-  /// Danh sách ảnh sau khi áp bộ lọc màu.
+  // ── Thư mục: helpers ─────────────────────────────────────────────────────
+
+  /// Id thư mục HIỆU LỰC của 1 ảnh: rỗng nếu chưa phân loại hoặc thư mục đã
+  /// bị xóa (id không còn trong [_folders] -> ảnh tự quay về "Chưa phân loại").
+  String _folderOf(String imageName) {
+    final id = _imageFolders[imageName] ?? '';
+    if (id.isEmpty) return _unsorted;
+    return _folders.any((f) => f.id == id) ? id : _unsorted;
+  }
+
+  /// Danh sách ảnh thuộc thư mục [folderId] (giữ nguyên thứ tự mới nhất trước).
+  List<GalleryImage> _imagesOf(String folderId) =>
+      (_images ?? const <GalleryImage>[])
+          .where((i) => _folderOf(i.name) == folderId)
+          .toList();
+
+  /// Ảnh trong PHẠM VI đang xem: cả kho nếu ở tổng quan, ngược lại là ảnh
+  /// của thư mục đang mở.
+  List<GalleryImage> get _scope => _openFolderId == null
+      ? (_images ?? const <GalleryImage>[])
+      : _imagesOf(_openFolderId!);
+
+  /// Danh sách ảnh sau khi áp bộ lọc màu (trong phạm vi thư mục đang mở).
   List<GalleryImage> get _visible {
-    final imgs = _images ?? const <GalleryImage>[];
+    final imgs = _scope;
     if (_filterColor == null) return imgs;
     return imgs
         .where((i) => (_colors[i.name] ?? '') == _filterColor)
         .toList();
+  }
+
+  /// Tên hiển thị của thư mục [folderId] ('' = "Chưa phân loại").
+  String _folderTitle(String folderId) {
+    if (folderId == _unsorted) return 'Chưa phân loại';
+    for (final f in _folders) {
+      if (f.id == folderId) return f.name;
+    }
+    return 'Thư mục';
+  }
+
+  /// Mở 1 thư mục từ màn tổng quan + tải trước NỐT các ảnh còn lại của nó.
+  void _openFolder(String folderId) {
+    setState(() {
+      _openFolderId = folderId;
+      _filterColor = null;
+      _exitSelection();
+    });
+    // 30 ảnh đầu đã (đang) được cache từ màn tổng quan; schedule cả danh sách
+    // để tải nốt phần còn lại — service tự bỏ qua URL trùng. priority = chen
+    // lên đầu hàng đợi vì người dùng đang xem chính thư mục này.
+    _precache.schedule(
+      context,
+      _imagesOf(folderId).map((i) => i.url),
+      priority: true,
+    );
+  }
+
+  /// Quay về màn tổng quan thư mục.
+  void _closeFolder() {
+    setState(() {
+      _openFolderId = null;
+      _filterColor = null;
+      _exitSelection();
+    });
+  }
+
+  // ── Tải trước ảnh (precache) ─────────────────────────────────────────────
+
+  /// Khi đã đủ dữ liệu (ảnh + thư mục + metadata): tải trước
+  /// [_precachePerFolder] ảnh đầu của MỖI thư mục (kể cả "Chưa phân loại")
+  /// để bấm vào thư mục nào thumbnail cũng hiện ngay. Chạy 1 lần mỗi lần tải.
+  void _maybePrecacheOverview() {
+    if (_didOverviewPrecache || !mounted) return;
+    if (_images == null || !_foldersReady || !_metasReady) return;
+    _didOverviewPrecache = true;
+    final urls = <String>[
+      for (final id in [_unsorted, ..._folders.map((f) => f.id)])
+        ..._imagesOf(id).take(_precachePerFolder).map((i) => i.url),
+    ];
+    _precache.schedule(context, urls);
   }
 
   // ── Upload ────────────────────────────────────────────────────────────────
@@ -136,8 +261,16 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   /// Chọn ảnh từ máy rồi upload lần lượt lên Storage; gán [uploadColor] cho
-  /// mọi ảnh tải lên ('' = không màu).
+  /// mọi ảnh tải lên ('' = không màu). Nếu đang mở 1 thư mục thật thì ảnh
+  /// tự động thuộc thư mục đó; ở tổng quan / "Chưa phân loại" thì để trống.
   Future<void> _pickAndUpload(String uploadColor) async {
+    // Chốt thư mục đích NGAY LÚC BẤM upload (upload lâu, người dùng có thể
+    // chuyển màn hình giữa chừng).
+    final targetFolder =
+        (_openFolderId != null && _openFolderId != _unsorted)
+            ? _openFolderId!
+            : _unsorted;
+
     final result = await FilePicker.pickFiles(
       type: FileType.image,
       allowMultiple: true,
@@ -193,6 +326,10 @@ class _GalleryPageState extends State<GalleryPage> {
     // Gán màu đã chọn cho tất cả ảnh vừa tải lên.
     if (uploadColor.isNotEmpty && uploaded.isNotEmpty) {
       await _assignColor(uploaded.map((e) => e.name), uploadColor);
+    }
+    // Đưa ảnh vừa tải vào thư mục đang mở (nếu có).
+    if (targetFolder != _unsorted && uploaded.isNotEmpty) {
+      await _assignFolder(uploaded.map((e) => e.name), targetFolder);
     }
     final base = fail == 0
         ? 'Đã tải lên ${uploaded.length} ảnh'
@@ -284,6 +421,207 @@ class _GalleryPageState extends State<GalleryPage> {
     }
   }
 
+  // ── Thư mục: tạo / đổi tên / xóa / chuyển ảnh ────────────────────────────
+
+  /// Chuyển nhiều ảnh vào thư mục [folderId] ('' = về "Chưa phân loại").
+  /// Cập nhật lạc quan giống [_assignColor].
+  Future<void> _assignFolder(Iterable<String> names, String folderId) async {
+    final list = names.toList();
+    if (list.isEmpty) return;
+    setState(() {
+      for (final n in list) {
+        if (folderId == _unsorted) {
+          _imageFolders.remove(n);
+        } else {
+          _imageFolders[n] = folderId;
+        }
+      }
+    });
+    try {
+      await _meta.setFolder(list, folderId);
+    } catch (e) {
+      if (mounted) _showToast('Chuyển thư mục thất bại: $e', isError: true);
+    }
+  }
+
+  /// Hộp thoại nhập tên thư mục (tạo mới hoặc đổi tên). Trả về tên đã trim,
+  /// null nếu hủy / để trống.
+  Future<String?> _promptFolderName({String? initial}) async {
+    final controller = TextEditingController(text: initial);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(initial == null ? 'Tạo thư mục mới' : 'Đổi tên thư mục'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 50,
+          decoration: const InputDecoration(
+            labelText: 'Tên thư mục',
+            hintText: 'vd. Lễ tốt nghiệp',
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: Text(initial == null ? 'Tạo' : 'Lưu'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final trimmed = name?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  /// Hỏi tên rồi tạo thư mục mới; trả về id vừa tạo (null nếu hủy / lỗi).
+  Future<String?> _createFolder() async {
+    final name = await _promptFolderName();
+    if (name == null || !mounted) return null;
+    try {
+      final id = await _folderService.createFolder(name);
+      if (mounted) {
+        // Thêm lạc quan để thư mục hiện ngay; stream sẽ đồng bộ lại sau.
+        setState(() {
+          _folders = [
+            ..._folders,
+            GalleryFolder(id: id, name: name, timeCreated: DateTime.now()),
+          ];
+        });
+        _showToast('Đã tạo thư mục "$name"');
+      }
+      return id;
+    } catch (e) {
+      if (mounted) _showToast('Tạo thư mục thất bại: $e', isError: true);
+      return null;
+    }
+  }
+
+  Future<void> _renameFolder(GalleryFolder folder) async {
+    final name = await _promptFolderName(initial: folder.name);
+    if (name == null || name == folder.name || !mounted) return;
+    // Cập nhật lạc quan; stream sẽ đồng bộ lại sau.
+    setState(() {
+      _folders = [
+        for (final f in _folders)
+          f.id == folder.id
+              ? GalleryFolder(id: f.id, name: name, timeCreated: f.timeCreated)
+              : f,
+      ];
+    });
+    try {
+      await _folderService.renameFolder(folder.id, name);
+    } catch (e) {
+      if (mounted) _showToast('Đổi tên thư mục thất bại: $e', isError: true);
+    }
+  }
+
+  /// Xóa thư mục: ảnh bên trong quay về "Chưa phân loại", file KHÔNG bị xóa.
+  Future<void> _deleteFolder(GalleryFolder folder) async {
+    final count = _imagesOf(folder.id).length;
+    final confirm = await showConfirmDialog(
+      context,
+      title: 'Xóa thư mục "${folder.name}"?',
+      message: count == 0
+          ? 'Thư mục đang trống.'
+          : '$count ảnh bên trong sẽ chuyển về "Chưa phân loại" '
+              '(không ảnh nào bị xóa).',
+      confirmLabel: 'Xóa',
+      icon: Icons.folder_delete_outlined,
+    );
+    if (!confirm || !mounted) return;
+
+    // Cập nhật lạc quan: gỡ thư mục khỏi danh sách; ảnh tự quay về "Chưa phân
+    // loại" nhờ [_folderOf] bỏ qua id không còn tồn tại.
+    setState(() {
+      _folders = _folders.where((f) => f.id != folder.id).toList();
+      if (_openFolderId == folder.id) _openFolderId = null;
+    });
+    try {
+      await _folderService.deleteFolder(folder.id);
+      await _meta.clearFolder(folder.id);
+      _showToast('Đã xóa thư mục "${folder.name}"');
+    } catch (e) {
+      if (mounted) _showToast('Xóa thư mục thất bại: $e', isError: true);
+    }
+  }
+
+  /// Mở bottom sheet chọn thư mục đích rồi chuyển [names] vào đó
+  /// (kèm lựa chọn tạo thư mục mới ngay trong sheet).
+  Future<void> _chooseFolderThenMove(List<String> names) async {
+    if (names.isEmpty) return;
+    const createSentinel = '__create__';
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                'Chuyển ${names.length} ảnh vào thư mục',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.folder_off_outlined),
+                    title: const Text('Chưa phân loại'),
+                    onTap: () => Navigator.pop(ctx, _unsorted),
+                  ),
+                  ..._folders.map(
+                    (f) => ListTile(
+                      leading: const Icon(Icons.folder_outlined),
+                      title: Text(
+                        f.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: Text('${_imagesOf(f.id).length} ảnh'),
+                      onTap: () => Navigator.pop(ctx, f.id),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.create_new_folder_outlined),
+              title: const Text('Tạo thư mục mới...'),
+              onTap: () => Navigator.pop(ctx, createSentinel),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return; // người dùng đóng sheet -> hủy.
+
+    var folderId = choice;
+    if (choice == createSentinel) {
+      final id = await _createFolder();
+      if (id == null || !mounted) return;
+      folderId = id;
+    }
+    await _assignFolder(names, folderId);
+    if (!mounted) return;
+    if (_selectionMode) setState(_exitSelection);
+    _showToast(
+      folderId == _unsorted
+          ? 'Đã đưa ${names.length} ảnh về "Chưa phân loại"'
+          : 'Đã chuyển ${names.length} ảnh vào "${_folderTitle(folderId)}"',
+    );
+  }
+
   // ── Tải ảnh về máy ────────────────────────────────────────────────────────
 
   /// Tải bytes 1 ảnh rồi lưu về máy. Ném lỗi để nơi gọi (viewer) tự báo.
@@ -297,6 +635,7 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   /// Mở bảng chọn màu rồi tải toàn bộ ảnh thuộc màu đó về máy dưới dạng 1 ZIP.
+  /// Ở tổng quan = xét cả kho; đang mở thư mục = chỉ xét ảnh thư mục đó.
   Future<void> _chooseColorThenDownloadAll() async {
     const allSentinel = '__all__';
     final choice = await showModalBottomSheet<String>(
@@ -336,7 +675,7 @@ class _GalleryPageState extends State<GalleryPage> {
     );
     if (choice == null || !mounted) return; // người dùng đóng bảng -> hủy.
 
-    final all = _images ?? const <GalleryImage>[];
+    final all = _scope;
     final List<GalleryImage> group;
     final String fileLabel;
     if (choice == allSentinel) {
@@ -544,6 +883,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final inFolder = _openFolderId != null;
     return Scaffold(
       appBar: _selectionMode ? _selectionAppBar() : _normalAppBar(),
       floatingActionButton: _selectionMode
@@ -568,7 +908,7 @@ class _GalleryPageState extends State<GalleryPage> {
             ),
       body: Column(
         children: [
-          if (_images != null && _images!.isNotEmpty) _filterBar(),
+          if (inFolder && _scope.isNotEmpty) _filterBar(),
           Expanded(child: _buildBody()),
         ],
       ),
@@ -576,29 +916,36 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   AppBar _normalAppBar() {
+    final inFolder = _openFolderId != null;
     return AppBar(
-      title: const Text('Kho ảnh'),
+      title: Text(inFolder ? _folderTitle(_openFolderId!) : 'Kho ảnh'),
       leading: IconButton(
-        tooltip: 'Quay lại',
+        tooltip: inFolder ? 'Về danh sách thư mục' : 'Quay lại',
         icon: const Icon(Icons.arrow_back),
-        onPressed: () => context.go('/admin'),
+        onPressed: inFolder ? _closeFolder : () => context.go('/admin'),
       ),
       actions: [
+        if (!inFolder)
+          IconButton(
+            tooltip: 'Tạo thư mục mới',
+            icon: const Icon(Icons.create_new_folder_outlined),
+            onPressed: _uploading ? null : () => _createFolder(),
+          ),
         IconButton(
           tooltip: 'Tải ảnh về máy (ZIP) theo màu',
           icon: const Icon(Icons.download_outlined),
-          onPressed:
-              (_images == null || _images!.isEmpty || _uploading || _zipping)
-                  ? null
-                  : _chooseColorThenDownloadAll,
-        ),
-        IconButton(
-          tooltip: 'Chọn nhiều ảnh',
-          icon: const Icon(Icons.checklist),
-          onPressed: (_images == null || _images!.isEmpty)
+          onPressed: (_scope.isEmpty || _uploading || _zipping)
               ? null
-              : () => setState(() => _selectionMode = true),
+              : _chooseColorThenDownloadAll,
         ),
+        if (inFolder)
+          IconButton(
+            tooltip: 'Chọn nhiều ảnh',
+            icon: const Icon(Icons.checklist),
+            onPressed: _scope.isEmpty
+                ? null
+                : () => setState(() => _selectionMode = true),
+          ),
         IconButton(
           tooltip: _compress
               ? 'Nén ảnh: BẬT (giảm dung lượng)'
@@ -630,6 +977,13 @@ class _GalleryPageState extends State<GalleryPage> {
       ),
       title: Text('Đã chọn ${_selected.length}'),
       actions: [
+        IconButton(
+          tooltip: 'Chuyển ảnh đã chọn vào thư mục',
+          icon: const Icon(Icons.drive_file_move_outlined),
+          onPressed: _selected.isEmpty
+              ? null
+              : () => _chooseFolderThenMove(_selected.toList()),
+        ),
         PopupMenuButton<String>(
           tooltip: 'Gán màu cho ảnh đã chọn',
           icon: const Icon(Icons.palette_outlined),
@@ -688,9 +1042,178 @@ class _GalleryPageState extends State<GalleryPage> {
     if (images == null) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (images.isEmpty) {
+    if (_openFolderId == null) return _buildOverview(images);
+    return _buildFolderGrid();
+  }
+
+  // ── Màn tổng quan thư mục ────────────────────────────────────────────────
+
+  Widget _buildOverview(List<GalleryImage> images) {
+    // Chờ 2 stream Firestore trả dữ liệu lần đầu để không "nháy" số đếm sai.
+    if (!_foldersReady || !_metasReady) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (images.isEmpty && _folders.isEmpty) {
       return const Center(
         child: Text('Chưa có ảnh — bấm "Tải ảnh lên" để thêm'),
+      );
+    }
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 220,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      // Ô đầu tiên luôn là "Chưa phân loại", sau đó tới các thư mục thật.
+      itemCount: _folders.length + 1,
+      itemBuilder: (context, i) =>
+          i == 0 ? _folderCard(null) : _folderCard(_folders[i - 1]),
+    );
+  }
+
+  /// Thẻ thư mục ở màn tổng quan: ảnh bìa = ảnh đầu tiên của thư mục, kèm tên
+  /// + số ảnh; [folder] = null là thẻ ảo "Chưa phân loại" (không đổi tên/xóa).
+  Widget _folderCard(GalleryFolder? folder) {
+    final id = folder?.id ?? _unsorted;
+    final name = folder?.name ?? 'Chưa phân loại';
+    final imgs = _imagesOf(id);
+    final cover = imgs.isEmpty ? null : imgs.first;
+
+    return GestureDetector(
+      onTap: () => _openFolder(id),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(
+              color: Colors.black12,
+              child: cover == null
+                  ? Center(
+                      child: Icon(
+                        folder == null
+                            ? Icons.folder_off_outlined
+                            : Icons.folder_outlined,
+                        size: 44,
+                      ),
+                    )
+                  : Image.network(
+                      cover.url,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, progress) =>
+                          progress == null
+                              ? child
+                              : const Center(
+                                  child: CircularProgressIndicator()),
+                      errorBuilder: (context, error, stack) => const Center(
+                        child: Icon(Icons.broken_image_outlined),
+                      ),
+                    ),
+            ),
+
+            // Dải mờ dưới cùng: icon + tên thư mục + số ảnh.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(10, 20, 10, 8),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.black87],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      folder == null
+                          ? Icons.folder_off_outlined
+                          : Icons.folder,
+                      color: Colors.white70,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${imgs.length}',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Menu đổi tên / xóa (chỉ với thư mục thật).
+            if (folder != null)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: _badge(
+                  circle: true,
+                  child: PopupMenuButton<String>(
+                    tooltip: 'Tùy chọn thư mục',
+                    icon: const Icon(Icons.more_vert,
+                        color: Colors.white, size: 20),
+                    padding: EdgeInsets.zero,
+                    onSelected: (v) => v == 'rename'
+                        ? _renameFolder(folder)
+                        : _deleteFolder(folder),
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: 'rename',
+                        child: Row(
+                          children: [
+                            Icon(Icons.drive_file_rename_outline, size: 20),
+                            SizedBox(width: 10),
+                            Text('Đổi tên'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.folder_delete_outlined, size: 20),
+                            SizedBox(width: 10),
+                            Text('Xóa thư mục'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Lưới ảnh trong 1 thư mục ─────────────────────────────────────────────
+
+  Widget _buildFolderGrid() {
+    final scope = _scope;
+    if (scope.isEmpty) {
+      return Center(
+        child: Text(
+          _openFolderId == _unsorted
+              ? 'Không có ảnh nào chưa phân loại'
+              : 'Thư mục trống — bấm "Tải ảnh lên" để thêm ảnh vào đây',
+        ),
       );
     }
     final visible = _visible;
@@ -761,7 +1284,7 @@ class _GalleryPageState extends State<GalleryPage> {
                 child: const CircularProgressIndicator(color: Colors.white),
               ),
 
-            // Chế độ chọn: ô tick; ngược lại: nút gán màu + xóa.
+            // Chế độ chọn: ô tick; ngược lại: nút gán màu + chuyển thư mục + xóa.
             if (_selectionMode)
               Positioned(
                 top: 6,
@@ -787,6 +1310,20 @@ class _GalleryPageState extends State<GalleryPage> {
                     padding: EdgeInsets.zero,
                     onSelected: (key) => _assignColor([image.name], key),
                     itemBuilder: (_) => _colorMenuItems(),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 4,
+                left: 4,
+                child: _badge(
+                  circle: true,
+                  child: IconButton(
+                    tooltip: 'Chuyển vào thư mục',
+                    icon: const Icon(Icons.drive_file_move_outlined,
+                        color: Colors.white, size: 20),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _chooseFolderThenMove([image.name]),
                   ),
                 ),
               ),

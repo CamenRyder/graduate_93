@@ -11,6 +11,10 @@ import 'pages/guide_page.dart';
 import 'pages/invite_detail_page.dart';
 import 'pages/login_page.dart';
 import 'pages/love_page.dart';
+import 'pages/post_detail_page.dart';
+import 'pages/post_editor_page.dart';
+import 'pages/posts_admin_page.dart';
+import 'pages/posts_list_page.dart';
 import 'pages/scheduled_page.dart';
 import 'pages/user_gallery_page.dart';
 import 'pages/welcome_page.dart';
@@ -26,8 +30,14 @@ import 'pages/welcome_page.dart';
 ///  - `/invite`    : chi tiết lời mời + xác nhận
 ///  - `/scheduled` : lịch hẹn              (sau khi xác nhận)
 ///  - `/guide`     : hướng dẫn di chuyển
+/// Khách đã xác thực HOẶC admin:
+///  - `/posts`     : danh sách bài viết (khách chỉ thấy bài đã đăng)
+///  - `/posts/:id` : đọc 1 bài viết
 /// Cần đăng nhập admin:
-///  - `/admin`     : trang quản trị
+///  - `/admin`                : trang quản trị
+///  - `/admin/posts`          : quản lý bài viết
+///  - `/admin/posts/edit`     : viết bài mới
+///  - `/admin/posts/edit/:id` : sửa bài đã có
 final router = GoRouter(
   initialLocation: '/',
   refreshListenable: Listenable.merge([authController, guestController]),
@@ -37,10 +47,17 @@ final router = GoRouter(
     final guestAuthed = guestController.isAuthenticated;
     final confirmed = guestController.confirmed;
 
-    // Bảo vệ /admin + /gallery: chưa đăng nhập -> về /login.
-    if ((loc == '/admin' || loc == '/gallery') && !loggedIn) return '/login';
+    // Bảo vệ /admin (+ mọi trang con /admin/...) và /gallery:
+    // chưa đăng nhập -> về /login.
+    final needsAdmin =
+        loc == '/admin' || loc.startsWith('/admin/') || loc == '/gallery';
+    if (needsAdmin && !loggedIn) return '/login';
     // Đã đăng nhập mà mở /login -> vào /admin.
     if (loc == '/login' && loggedIn) return '/admin';
+
+    // Trang bài viết: cho khách đã xác thực HOẶC admin; còn lại về nhập code.
+    final isPosts = loc == '/posts' || loc.startsWith('/posts/');
+    if (isPosts && !guestAuthed && !loggedIn) return '/';
 
     // Khách đã xác thực ở trang nhập code: đã xác nhận thì vào thẳng lịch hẹn,
     // chưa thì vào trang chào (chặn quay lại trang nhập code khi back/reload).
@@ -94,6 +111,28 @@ final router = GoRouter(
     GoRoute(
       path: '/admin',
       builder: (context, state) => const AdminPage(),
+    ),
+    GoRoute(
+      path: '/admin/posts',
+      builder: (context, state) => const PostsAdminPage(),
+    ),
+    GoRoute(
+      path: '/admin/posts/edit',
+      builder: (context, state) => const PostEditorPage(),
+    ),
+    GoRoute(
+      path: '/admin/posts/edit/:id',
+      builder: (context, state) =>
+          PostEditorPage(postId: state.pathParameters['id']),
+    ),
+    GoRoute(
+      path: '/posts',
+      builder: (context, state) => const PostsListPage(),
+    ),
+    GoRoute(
+      path: '/posts/:id',
+      builder: (context, state) =>
+          PostDetailPage(postId: state.pathParameters['id'] ?? ''),
     ),
     GoRoute(
       path: '/gallery',

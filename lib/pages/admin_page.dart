@@ -377,6 +377,11 @@ class _AdminPageState extends State<AdminPage> {
             onPressed: () => context.go('/gallery'),
           ),
           IconButton(
+            tooltip: 'Bài viết',
+            icon: const Icon(Icons.article_outlined),
+            onPressed: () => context.go('/admin/posts'),
+          ),
+          IconButton(
             tooltip: 'Trò chơi thổi bóng (Love)',
             icon: const Icon(Icons.favorite_outline),
             // push (không phải go) để bấm back từ trang game quay lại admin.

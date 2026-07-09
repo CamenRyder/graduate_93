@@ -30,6 +30,10 @@ class GalleryImage {
 /// LƯU Ý: cần tạo bucket [SupabaseConfig.galleryBucket] (đặt Public để đọc
 /// công khai) + cấu hình Storage policies cho phép upload/list/xóa.
 class StorageService {
+  /// Tiền tố "thư mục" chứa ảnh của BÀI VIẾT trong bucket (tách khỏi kho
+  /// ảnh gallery vốn lưu phẳng ở gốc bucket).
+  static const String postsPrefix = 'posts';
+
   SupabaseStorageClient get _storage => Supabase.instance.client.storage;
 
   String get _bucket => SupabaseConfig.galleryBucket;
@@ -40,29 +44,59 @@ class StorageService {
     required Uint8List bytes,
     required String filename,
     String? contentType,
-  }) async {
-    // Tiền tố timestamp để tên không trùng và giữ thứ tự upload.
+  }) {
+    return _uploadTo(
+      path: _stampedName(filename),
+      bytes: bytes,
+      contentType: contentType,
+    );
+  }
+
+  /// Upload 1 ảnh cho BÀI VIẾT: lưu dưới `posts/<timestamp>_<filename>`
+  /// (cùng cách làm sạch tên + đoán content-type với [uploadImage]).
+  Future<GalleryImage> uploadPostImage({
+    required Uint8List bytes,
+    required String filename,
+    String? contentType,
+  }) {
+    return _uploadTo(
+      path: '$postsPrefix/${_stampedName(filename)}',
+      bytes: bytes,
+      contentType: contentType,
+    );
+  }
+
+  /// Tên file an toàn kèm tiền tố timestamp để không trùng và giữ thứ tự upload.
+  String _stampedName(String filename) {
     final stamp = DateTime.now().millisecondsSinceEpoch;
     final safeName = filename.replaceAll(RegExp(r'[^\w.\-]'), '_');
-    final path = '${stamp}_$safeName';
+    return '${stamp}_$safeName';
+  }
 
+  /// Upload bytes lên [path] trong bucket rồi trả về [GalleryImage] tương ứng.
+  Future<GalleryImage> _uploadTo({
+    required String path,
+    required Uint8List bytes,
+    String? contentType,
+  }) async {
     await _storage.from(_bucket).uploadBinary(
           path,
           bytes,
           fileOptions: FileOptions(
-            contentType: contentType ?? _guessContentType(safeName),
+            contentType: contentType ?? _guessContentType(path),
             upsert: false,
           ),
         );
 
     return GalleryImage(
-      name: path,
+      name: path.split('/').last,
       fullPath: path,
       url: _storage.from(_bucket).getPublicUrl(path),
     );
   }
 
-  /// Liệt kê toàn bộ ảnh trong bucket, mới nhất lên đầu.
+  /// Liệt kê toàn bộ ảnh Ở GỐC bucket (kho ảnh gallery), mới nhất lên đầu.
+  /// Ảnh bài viết nằm trong "thư mục" `posts/` nên không lẫn vào đây.
   Future<List<GalleryImage>> listImages() async {
     final objects = await _storage.from(_bucket).list(
           searchOptions: const SearchOptions(
@@ -73,8 +107,11 @@ class StorageService {
         );
 
     return objects
-        // Bỏ qua "thư mục giữ chỗ" rỗng nếu có (.emptyFolderPlaceholder).
-        .where((o) => o.name != '.emptyFolderPlaceholder')
+        // Bỏ qua:
+        //  - "thư mục" con (vd `posts/` chứa ảnh bài viết) — Supabase trả
+        //    folder như 1 entry có `id` null;
+        //  - "thư mục giữ chỗ" rỗng nếu có (.emptyFolderPlaceholder).
+        .where((o) => o.id != null && o.name != '.emptyFolderPlaceholder')
         .map(
           (o) => GalleryImage(
             name: o.name,
@@ -95,6 +132,11 @@ class StorageService {
     if (fullPaths.isEmpty) return Future.value();
     return _storage.from(_bucket).remove(fullPaths);
   }
+
+  /// Xóa ảnh của BÀI VIẾT (đường dẫn dạng `posts/...` lưu trong field `path`
+  /// của khối ảnh) — gọi khi gỡ 1 khối ảnh hoặc xóa cả bài viết.
+  Future<void> deletePostImages(List<String> fullPaths) =>
+      deleteImages(fullPaths);
 
   /// Tải bytes của 1 ảnh từ bucket (dùng để lưu ảnh về máy / đóng gói ZIP).
   Future<Uint8List> downloadBytes(String fullPath) {

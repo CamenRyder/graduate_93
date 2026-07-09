@@ -190,6 +190,13 @@ class _ScheduledPageState extends State<ScheduledPage> {
             onPressed: () => context.go('/guide'),
             child: const Text('xem hướng dẫn'),
           ),
+          const SizedBox(height: 8),
+          // Link nhỏ mở trang bài viết (nhật ký / chia sẻ của chủ thiệp).
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: kBrandGreen),
+            onPressed: () => context.go('/posts'),
+            child: const Text('xem bài viết'),
+          ),
         ],
       ),
     );
