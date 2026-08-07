@@ -19,8 +19,11 @@ class SupabaseConfig {
   /// Tên bucket chứa ảnh gallery (tạo trên Supabase Storage).
   static const String galleryBucket = 'graduation';
 
+  /// File Storage quota của Supabase Free Plan (1 GiB). Quota thực tế được
+  /// tính ở cấp organization; giá trị này phù hợp khi dùng gói Free.
+  static const int storageQuotaBytes = 1024 * 1024 * 1024;
+
   /// Đã nạp cấu hình qua env chưa (để app bỏ qua Supabase thay vì crash khi
   /// chạy mà quên truyền --dart-define-from-file=env.json).
-  static bool get isConfigured =>
-      url.startsWith('http') && anonKey.isNotEmpty;
+  static bool get isConfigured => url.startsWith('http') && anonKey.isNotEmpty;
 }

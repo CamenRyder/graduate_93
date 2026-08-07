@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 class AppTheme {
   AppTheme._();
 
-  static const Color seedColor = Color(0xFF4F46E5); // indigo
+  static const Color seedColor = Color.fromARGB(255, 70, 229, 110); // indigo
 
   static ThemeData light() => _build(Brightness.light);
   static ThemeData dark() => _build(Brightness.dark);
