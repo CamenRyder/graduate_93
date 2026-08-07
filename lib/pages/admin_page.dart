@@ -10,6 +10,7 @@ import '../models/app_user.dart';
 import '../services/firestore_service.dart';
 import '../theme/row_palette.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/text_input_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
 
 // ── Định nghĩa cột ──────────────────────────────────────────────────────────
@@ -1287,9 +1288,19 @@ class _UsersTableState extends State<UsersTable> {
 
   /// Mở popup soạn nội dung với khung lớn. Chỉ ghi lại vào [c] khi bấm "Xong".
   Future<void> _openTextEditor(TextEditingController c, String label) async {
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => _TextEditorDialog(label: label, initialText: c.text),
+    final result = await showTextInputDialog(
+      context,
+      title: label,
+      initialValue: c.text,
+      hintText: 'Nhập nội dung…',
+      confirmLabel: 'Xong',
+      icon: Icons.edit_note_rounded,
+      minLines: 8,
+      maxLines: 16,
+      maxWidth: 568,
+      allowEmpty: true,
+      trimResult: false,
+      keyboardType: TextInputType.multiline,
     );
     // null = đã hủy / bấm ra ngoài -> giữ nguyên; chuỗi (kể cả rỗng) = đã "Xong".
     if (result != null) {
@@ -1437,66 +1448,6 @@ class _UsersTableState extends State<UsersTable> {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${two(dt.day)}/${two(dt.month)}/${dt.year} '
         '${two(dt.hour)}:${two(dt.minute)}';
-  }
-}
-
-/// Popup soạn nội dung dài (Message, Des_1/2/3).
-///
-/// Tự quản lý controller nháp và chỉ dispose trong [dispose] của chính nó —
-/// tức là sau khi dialog đã bị gỡ khỏi cây widget. Nếu dispose ngay sau
-/// `await showDialog` thì controller bị hủy trong lúc animation đóng còn chạy
-/// (TextField vẫn còn sống) -> lỗi "TextEditingController used after disposed".
-class _TextEditorDialog extends StatefulWidget {
-  const _TextEditorDialog({required this.label, required this.initialText});
-
-  final String label;
-  final String initialText;
-
-  @override
-  State<_TextEditorDialog> createState() => _TextEditorDialogState();
-}
-
-class _TextEditorDialogState extends State<_TextEditorDialog> {
-  late final TextEditingController _draft =
-      TextEditingController(text: widget.initialText);
-
-  @override
-  void dispose() {
-    _draft.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.label),
-      content: SizedBox(
-        width: 520,
-        child: TextField(
-          controller: _draft,
-          autofocus: true,
-          minLines: 8,
-          maxLines: 16,
-          keyboardType: TextInputType.multiline,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-            hintText: 'Nhập nội dung…',
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          // null -> giữ nguyên nội dung cũ.
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Hủy'),
-        ),
-        FilledButton(
-          // Trả chuỗi (kể cả rỗng) -> ghi đè nội dung.
-          onPressed: () => Navigator.of(context).pop(_draft.text),
-          child: const Text('Xong'),
-        ),
-      ],
-    );
   }
 }
 

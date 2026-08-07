@@ -1,60 +1,55 @@
 import 'package:flutter/material.dart';
 
-/// Dialog xác nhận dùng chung, theo style Material 3 của hệ thống.
+import 'app_dialog.dart';
+
+/// Hiển thị popup xác nhận dùng chung của ứng dụng.
 ///
-/// [destructive] = true -> dùng tông màu đỏ (error) cho hành động nguy hiểm
-/// như xóa. Trả về `true` nếu người dùng xác nhận.
+/// Popup có lớp nền tối và blur để nội dung chính nổi bật hơn. Hai nút hành
+/// động luôn xếp dọc: xác nhận ở trên, hủy ở dưới. Khi [destructive] là true,
+/// hành động xác nhận dùng màu lỗi để cảnh báo cho các thao tác như xóa.
 Future<bool> showConfirmDialog(
   BuildContext context, {
   required String title,
   required String message,
   String confirmLabel = 'Đồng ý',
   String cancelLabel = 'Hủy',
-  IconData icon = Icons.help_outline,
+  IconData icon = Icons.help_outline_rounded,
   bool destructive = false,
 }) async {
   final colorScheme = Theme.of(context).colorScheme;
+  final accentColor = destructive ? colorScheme.error : colorScheme.primary;
 
-  final accent = destructive ? colorScheme.error : colorScheme.primary;
-  final onAccent = destructive ? colorScheme.onError : colorScheme.onPrimary;
-  final accentContainer =
-      destructive ? colorScheme.errorContainer : colorScheme.primaryContainer;
-  final onAccentContainer = destructive
-      ? colorScheme.onErrorContainer
-      : colorScheme.onPrimaryContainer;
-
-  final result = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      icon: Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          color: accentContainer,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: onAccentContainer, size: 28),
-      ),
-      title: Text(title, textAlign: TextAlign.center),
-      content: Text(message, textAlign: TextAlign.center),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: Text(cancelLabel),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: accent,
-            foregroundColor: onAccent,
-            // không kéo dài full-width như nút trong form
-            minimumSize: const Size(0, 44),
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+  final result = await showAppDialog<bool>(
+    context,
+    builder: (dialogContext) => AppDialogCard(
+      title: title,
+      icon: icon,
+      accentColor: accentColor,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+              height: 1.55,
+            ),
           ),
-          onPressed: () => Navigator.pop(ctx, true),
-          child: Text(confirmLabel),
-        ),
-      ],
+          const SizedBox(height: 26),
+          AppDialogActionButton(
+            label: confirmLabel,
+            backgroundColor: accentColor,
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+          ),
+          const SizedBox(height: 10),
+          AppDialogActionButton(
+            label: cancelLabel,
+            backgroundColor: appDialogCancelColor,
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+          ),
+        ],
+      ),
     ),
   );
 

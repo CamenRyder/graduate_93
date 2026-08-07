@@ -10,10 +10,13 @@ import '../services/gallery_meta_service.dart';
 import '../services/image_compressor.dart';
 import '../services/image_precache_service.dart';
 import '../services/storage_service.dart';
+import '../services/storage_usage_service.dart';
 import '../services/web_download.dart';
+import '../supabase_config.dart';
 import '../theme/row_palette.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/fullscreen_gallery.dart';
+import '../widgets/text_input_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
 
 /// Kho ảnh (gallery) cho admin: upload ảnh lên Supabase Storage rồi xem lại,
@@ -38,6 +41,7 @@ class GalleryPage extends StatefulWidget {
 
 class _GalleryPageState extends State<GalleryPage> {
   final _storage = StorageService();
+  final _storageUsageService = StorageUsageService();
   final _meta = GalleryMetaService();
   final _folderService = GalleryFolderService();
   final _precache = ImagePrecacheService.instance;
@@ -51,6 +55,9 @@ class _GalleryPageState extends State<GalleryPage> {
   /// null = đang tải lần đầu; [] = đã tải nhưng rỗng.
   List<GalleryImage>? _images;
   String? _error;
+  StorageUsage? _storageUsage;
+  String? _storageUsageError;
+  bool _storageUsageLoading = true;
 
   /// {tên ảnh -> khóa màu} đồng bộ realtime từ Firestore.
   Map<String, String> _colors = {};
@@ -124,6 +131,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
   /// Tải (hoặc tải lại) toàn bộ danh sách ảnh từ Storage.
   Future<void> _load() async {
+    unawaited(_loadStorageUsage());
     setState(() {
       _images = null;
       _error = null;
@@ -137,6 +145,33 @@ class _GalleryPageState extends State<GalleryPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '$e');
+    }
+  }
+
+  /// Dung lượng là thông tin phụ: lỗi RPC không được làm hỏng toàn bộ kho ảnh.
+  Future<void> _loadStorageUsage({bool showLoading = true}) async {
+    if (showLoading && mounted) {
+      setState(() {
+        _storageUsageLoading = true;
+        _storageUsageError = null;
+      });
+    }
+    try {
+      final usage = await _storageUsageService.getUsage(
+        quotaBytes: SupabaseConfig.storageQuotaBytes,
+      );
+      if (!mounted) return;
+      setState(() {
+        _storageUsage = usage;
+        _storageUsageLoading = false;
+        _storageUsageError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _storageUsageLoading = false;
+        _storageUsageError = '$e';
+      });
     }
   }
 
@@ -166,9 +201,7 @@ class _GalleryPageState extends State<GalleryPage> {
   List<GalleryImage> get _visible {
     final imgs = _scope;
     if (_filterColor == null) return imgs;
-    return imgs
-        .where((i) => (_colors[i.name] ?? '') == _filterColor)
-        .toList();
+    return imgs.where((i) => (_colors[i.name] ?? '') == _filterColor).toList();
   }
 
   /// Tên hiển thị của thư mục [folderId] ('' = "Chưa phân loại").
@@ -266,10 +299,9 @@ class _GalleryPageState extends State<GalleryPage> {
   Future<void> _pickAndUpload(String uploadColor) async {
     // Chốt thư mục đích NGAY LÚC BẤM upload (upload lâu, người dùng có thể
     // chuyển màn hình giữa chừng).
-    final targetFolder =
-        (_openFolderId != null && _openFolderId != _unsorted)
-            ? _openFolderId!
-            : _unsorted;
+    final targetFolder = (_openFolderId != null && _openFolderId != _unsorted)
+        ? _openFolderId!
+        : _unsorted;
 
     final result = await FilePicker.pickFiles(
       type: FileType.image,
@@ -338,6 +370,9 @@ class _GalleryPageState extends State<GalleryPage> {
         ? ' · nén ${_fmtSize(totalOriginal)} → ${_fmtSize(totalCompressed)}'
         : '';
     _showToast('$base$note', isError: fail > 0);
+    if (uploaded.isNotEmpty) {
+      unawaited(_loadStorageUsage(showLoading: false));
+    }
   }
 
   // ── Xóa ─────────────────────────────────────────────────────────────────
@@ -349,6 +384,7 @@ class _GalleryPageState extends State<GalleryPage> {
       message: 'Ảnh sẽ bị xóa vĩnh viễn khỏi kho.',
       confirmLabel: 'Xóa',
       icon: Icons.delete_outline,
+      destructive: true,
     );
     if (!confirm || !mounted) return;
 
@@ -362,6 +398,7 @@ class _GalleryPageState extends State<GalleryPage> {
         _deleting.remove(image.fullPath);
       });
       _showToast('Đã xóa ảnh');
+      unawaited(_loadStorageUsage(showLoading: false));
     } catch (e) {
       if (!mounted) return;
       setState(() => _deleting.remove(image.fullPath));
@@ -378,6 +415,7 @@ class _GalleryPageState extends State<GalleryPage> {
       message: 'Các ảnh đã chọn sẽ bị xóa vĩnh viễn khỏi kho.',
       confirmLabel: 'Xóa',
       icon: Icons.delete_outline,
+      destructive: true,
     );
     if (!confirm || !mounted) return;
 
@@ -392,6 +430,7 @@ class _GalleryPageState extends State<GalleryPage> {
         _exitSelection();
       });
       _showToast('Đã xóa ${names.length} ảnh');
+      unawaited(_loadStorageUsage(showLoading: false));
     } catch (e) {
       if (!mounted) return;
       setState(() => _deleting.removeAll(names));
@@ -447,36 +486,19 @@ class _GalleryPageState extends State<GalleryPage> {
   /// Hộp thoại nhập tên thư mục (tạo mới hoặc đổi tên). Trả về tên đã trim,
   /// null nếu hủy / để trống.
   Future<String?> _promptFolderName({String? initial}) async {
-    final controller = TextEditingController(text: initial);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(initial == null ? 'Tạo thư mục mới' : 'Đổi tên thư mục'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 50,
-          decoration: const InputDecoration(
-            labelText: 'Tên thư mục',
-            hintText: 'vd. Lễ tốt nghiệp',
-          ),
-          onSubmitted: (v) => Navigator.pop(ctx, v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: Text(initial == null ? 'Tạo' : 'Lưu'),
-          ),
-        ],
-      ),
+    return showTextInputDialog(
+      context,
+      title: initial == null ? 'Tạo thư mục mới' : 'Đổi tên thư mục',
+      initialValue: initial ?? '',
+      labelText: 'Tên thư mục',
+      hintText: 'Ví dụ: Lễ tốt nghiệp',
+      confirmLabel: initial == null ? 'Tạo' : 'Lưu',
+      emptyErrorText: 'Vui lòng nhập tên thư mục.',
+      icon: initial == null
+          ? Icons.create_new_folder_outlined
+          : Icons.drive_file_rename_outline,
+      maxLength: 50,
     );
-    controller.dispose();
-    final trimmed = name?.trim() ?? '';
-    return trimmed.isEmpty ? null : trimmed;
   }
 
   /// Hỏi tên rồi tạo thư mục mới; trả về id vừa tạo (null nếu hủy / lỗi).
@@ -530,9 +552,10 @@ class _GalleryPageState extends State<GalleryPage> {
       message: count == 0
           ? 'Thư mục đang trống.'
           : '$count ảnh bên trong sẽ chuyển về "Chưa phân loại" '
-              '(không ảnh nào bị xóa).',
+                '(không ảnh nào bị xóa).',
       confirmLabel: 'Xóa',
       icon: Icons.folder_delete_outlined,
+      destructive: true,
     );
     if (!confirm || !mounted) return;
 
@@ -694,15 +717,18 @@ class _GalleryPageState extends State<GalleryPage> {
   /// Tải các ảnh đang chọn về máy dưới dạng 1 ZIP.
   Future<void> _downloadSelected() async {
     final names = _selected.toSet();
-    final group =
-        (_images ?? const <GalleryImage>[]).where((i) => names.contains(i.name)).toList();
+    final group = (_images ?? const <GalleryImage>[])
+        .where((i) => names.contains(i.name))
+        .toList();
     await _downloadGroupAsZip(group, 'da-chon');
   }
 
   /// Tải lần lượt bytes từng ảnh, đóng gói thành ZIP rồi lưu về máy. Hiển thị
   /// hộp thoại tiến trình (có nút Hủy) trong lúc tải.
   Future<void> _downloadGroupAsZip(
-      List<GalleryImage> images, String fileLabel) async {
+    List<GalleryImage> images,
+    String fileLabel,
+  ) async {
     if (images.isEmpty) {
       _showToast('Không có ảnh nào để tải');
       return;
@@ -714,36 +740,38 @@ class _GalleryPageState extends State<GalleryPage> {
     setState(() => _zipping = true);
 
     // Hộp thoại tiến trình (không tự đóng được, có nút Hủy).
-    unawaited(showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        dialogCtx = ctx;
-        return AlertDialog(
-          title: const Text('Đang chuẩn bị file ZIP'),
-          content: ValueListenableBuilder<int>(
-            valueListenable: done,
-            builder: (_, v, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                LinearProgressIndicator(value: v / images.length),
-                const SizedBox(height: 12),
-                Text('$v / ${images.length} ảnh'),
-              ],
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          dialogCtx = ctx;
+          return AlertDialog(
+            title: const Text('Đang chuẩn bị file ZIP'),
+            content: ValueListenableBuilder<int>(
+              valueListenable: done,
+              builder: (_, v, _) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  LinearProgressIndicator(value: v / images.length),
+                  const SizedBox(height: 12),
+                  Text('$v / ${images.length} ảnh'),
+                ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                cancelled = true;
-                Navigator.pop(ctx);
-              },
-              child: const Text('Hủy'),
-            ),
-          ],
-        );
-      },
-    ));
+            actions: [
+              TextButton(
+                onPressed: () {
+                  cancelled = true;
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Hủy'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
 
     try {
       final archive = Archive();
@@ -908,6 +936,12 @@ class _GalleryPageState extends State<GalleryPage> {
             ),
       body: Column(
         children: [
+          _StorageUsageBar(
+            usage: _storageUsage,
+            loading: _storageUsageLoading,
+            error: _storageUsageError,
+            onRetry: _loadStorageUsage,
+          ),
           if (inFolder && _scope.isNotEmpty) _filterBar(),
           Expanded(child: _buildBody()),
         ],
@@ -950,12 +984,15 @@ class _GalleryPageState extends State<GalleryPage> {
           tooltip: _compress
               ? 'Nén ảnh: BẬT (giảm dung lượng)'
               : 'Nén ảnh: TẮT (tải nguyên gốc)',
-          icon: Icon(_compress
-              ? Icons.compress
-              : Icons.photo_size_select_actual_outlined),
+          icon: Icon(
+            _compress
+                ? Icons.compress
+                : Icons.photo_size_select_actual_outlined,
+          ),
           color: _compress ? Theme.of(context).colorScheme.primary : null,
-          onPressed:
-              _uploading ? null : () => setState(() => _compress = !_compress),
+          onPressed: _uploading
+              ? null
+              : () => setState(() => _compress = !_compress),
         ),
         IconButton(
           tooltip: 'Tải lại',
@@ -1103,9 +1140,8 @@ class _GalleryPageState extends State<GalleryPage> {
                       fit: BoxFit.cover,
                       loadingBuilder: (context, child, progress) =>
                           progress == null
-                              ? child
-                              : const Center(
-                                  child: CircularProgressIndicator()),
+                          ? child
+                          : const Center(child: CircularProgressIndicator()),
                       errorBuilder: (context, error, stack) => const Center(
                         child: Icon(Icons.broken_image_outlined),
                       ),
@@ -1129,9 +1165,7 @@ class _GalleryPageState extends State<GalleryPage> {
                 child: Row(
                   children: [
                     Icon(
-                      folder == null
-                          ? Icons.folder_off_outlined
-                          : Icons.folder,
+                      folder == null ? Icons.folder_off_outlined : Icons.folder,
                       color: Colors.white70,
                       size: 16,
                     ),
@@ -1166,8 +1200,11 @@ class _GalleryPageState extends State<GalleryPage> {
                   circle: true,
                   child: PopupMenuButton<String>(
                     tooltip: 'Tùy chọn thư mục',
-                    icon: const Icon(Icons.more_vert,
-                        color: Colors.white, size: 20),
+                    icon: const Icon(
+                      Icons.more_vert,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                     padding: EdgeInsets.zero,
                     onSelected: (v) => v == 'rename'
                         ? _renameFolder(folder)
@@ -1262,9 +1299,8 @@ class _GalleryPageState extends State<GalleryPage> {
                 loadingBuilder: (context, child, progress) => progress == null
                     ? child
                     : const Center(child: CircularProgressIndicator()),
-                errorBuilder: (context, error, stack) => const Center(
-                  child: Icon(Icons.broken_image_outlined),
-                ),
+                errorBuilder: (context, error, stack) =>
+                    const Center(child: Icon(Icons.broken_image_outlined)),
               ),
             ),
 
@@ -1305,8 +1341,11 @@ class _GalleryPageState extends State<GalleryPage> {
                   circle: true,
                   child: PopupMenuButton<String>(
                     tooltip: 'Gán màu',
-                    icon: const Icon(Icons.palette_outlined,
-                        color: Colors.white, size: 20),
+                    icon: const Icon(
+                      Icons.palette_outlined,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                     padding: EdgeInsets.zero,
                     onSelected: (key) => _assignColor([image.name], key),
                     itemBuilder: (_) => _colorMenuItems(),
@@ -1320,8 +1359,11 @@ class _GalleryPageState extends State<GalleryPage> {
                   circle: true,
                   child: IconButton(
                     tooltip: 'Chuyển vào thư mục',
-                    icon: const Icon(Icons.drive_file_move_outlined,
-                        color: Colors.white, size: 20),
+                    icon: const Icon(
+                      Icons.drive_file_move_outlined,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                     visualDensity: VisualDensity.compact,
                     onPressed: () => _chooseFolderThenMove([image.name]),
                   ),
@@ -1334,8 +1376,11 @@ class _GalleryPageState extends State<GalleryPage> {
                   circle: true,
                   child: IconButton(
                     tooltip: 'Xóa ảnh',
-                    icon: const Icon(Icons.delete_outline,
-                        color: Colors.white, size: 20),
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                     visualDensity: VisualDensity.compact,
                     onPressed: () => _deleteImage(image),
                   ),
@@ -1350,10 +1395,9 @@ class _GalleryPageState extends State<GalleryPage> {
                   child: Container(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
-                      color: Theme.of(context)
-                          .colorScheme
-                          .primary
-                          .withValues(alpha: 0.25),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.25),
                     ),
                   ),
                 ),
@@ -1371,10 +1415,7 @@ class _GalleryPageState extends State<GalleryPage> {
       shape: circle
           ? const CircleBorder()
           : RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      child: Padding(
-        padding: EdgeInsets.all(circle ? 0 : 4),
-        child: child,
-      ),
+      child: Padding(padding: EdgeInsets.all(circle ? 0 : 4), child: child),
     );
   }
 
@@ -1399,6 +1440,106 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 }
 
+class _StorageUsageBar extends StatelessWidget {
+  const _StorageUsageBar({
+    required this.usage,
+    required this.loading,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final StorageUsage? usage;
+  final bool loading;
+  final String? error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final data = usage;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.storage_outlined, size: 18, color: colors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  data == null
+                      ? 'Dung lượng kho ảnh'
+                      : 'Đã dùng ${_formatBytes(data.usedBytes)} / '
+                            '${_formatBytes(data.quotaBytes)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (data != null)
+                Text(
+                  'Còn ${(data.remainingFraction * 100).round()}%',
+                  style: theme.textTheme.bodySmall,
+                ),
+              if (error != null)
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Thử đọc lại dung lượng',
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh, size: 18),
+                ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          if (loading && data == null)
+            const LinearProgressIndicator(minHeight: 7)
+          else if (error != null && data == null)
+            Text(
+              'Chưa đọc được dung lượng Storage. Hãy cài RPC rồi thử lại.',
+              style: theme.textTheme.bodySmall?.copyWith(color: colors.error),
+            )
+          else if (data != null)
+            Semantics(
+              label:
+                  'Dung lượng Storage đã dùng ${(data.usedFraction * 100).round()} phần trăm',
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: LinearProgressIndicator(
+                  value: data.usedFraction,
+                  minHeight: 8,
+                  color: _progressColor(colors, data.remainingFraction),
+                  backgroundColor: colors.surfaceContainerHighest,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Color _progressColor(ColorScheme colors, double remaining) {
+    if (remaining <= 0.1) return colors.error;
+    if (remaining <= 0.25) return colors.tertiary;
+    return colors.primary;
+  }
+
+  String _formatBytes(int bytes) {
+    const mb = 1024 * 1024;
+    const gb = 1024 * mb;
+    if (bytes >= gb) return '${(bytes / gb).toStringAsFixed(1)} GB';
+    return '${(bytes / mb).toStringAsFixed(bytes < 10 * mb ? 1 : 0)} MB';
+  }
+}
+
 class _ErrorView extends StatelessWidget {
   const _ErrorView({required this.error, required this.onRetry});
 
@@ -1415,8 +1556,10 @@ class _ErrorView extends StatelessWidget {
           children: [
             const Icon(Icons.error_outline, size: 44),
             const SizedBox(height: 12),
-            Text('Không tải được kho ảnh:\n$error',
-                textAlign: TextAlign.center),
+            Text(
+              'Không tải được kho ảnh:\n$error',
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 12),
             FilledButton(onPressed: onRetry, child: const Text('Thử lại')),
           ],
