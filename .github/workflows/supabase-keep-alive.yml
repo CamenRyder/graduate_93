@@ -23,37 +23,37 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-  set -Eeuo pipefail
-
-  if [[ -z "$SUPABASE_URL" || -z "$SUPABASE_ANON_KEY" ]]; then
-    echo "::error::Thiếu SUPABASE_URL hoặc SUPABASE_ANON_KEY."
-    exit 1
-  fi
-
-  # Không tự động chấp nhận secret chứa whitespace hoặc newline.
-  if [[ "$SUPABASE_URL" =~ [[:space:]] ]]; then
-    echo "::error::SUPABASE_URL chứa khoảng trắng hoặc ký tự xuống dòng."
-    exit 1
-  fi
-
-  SUPABASE_URL="${SUPABASE_URL%/}"
-
-  if [[ ! "$SUPABASE_URL" =~ ^https://[A-Za-z0-9.-]+$ ]]; then
-    echo "::error::SUPABASE_URL không hợp lệ. Giá trị phải có dạng https://<project-ref>.supabase.co"
-    exit 1
-  fi
-
-  curl --silent --show-error --fail-with-body \
-    --connect-timeout 10 \
-    --max-time 30 \
-    --retry 2 \
-    -X POST \
-    "$SUPABASE_URL/storage/v1/object/list/graduation" \
-    -H "apikey: $SUPABASE_ANON_KEY" \
-    -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
-    -H "Content-Type: application/json" \
-    -d '{"prefix":"","limit":1}' \
-    -o /dev/null \
-    -w "HTTP %{http_code}\n"
-
-  echo "Đã ping Supabase thành công."
+    set -Eeuo pipefail
+  
+    if [[ -z "$SUPABASE_URL" || -z "$SUPABASE_ANON_KEY" ]]; then
+      echo "::error::Thiếu SUPABASE_URL hoặc SUPABASE_ANON_KEY."
+      exit 1
+    fi
+  
+    # Không tự động chấp nhận secret chứa whitespace hoặc newline.
+    if [[ "$SUPABASE_URL" =~ [[:space:]] ]]; then
+      echo "::error::SUPABASE_URL chứa khoảng trắng hoặc ký tự xuống dòng."
+      exit 1
+    fi
+  
+    SUPABASE_URL="${SUPABASE_URL%/}"
+  
+    if [[ ! "$SUPABASE_URL" =~ ^https://[A-Za-z0-9.-]+$ ]]; then
+      echo "::error::SUPABASE_URL không hợp lệ. Giá trị phải có dạng https://<project-ref>.supabase.co"
+      exit 1
+    fi
+  
+    curl --silent --show-error --fail-with-body \
+      --connect-timeout 10 \
+      --max-time 30 \
+      --retry 2 \
+      -X POST \
+      "$SUPABASE_URL/storage/v1/object/list/graduation" \
+      -H "apikey: $SUPABASE_ANON_KEY" \
+      -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"prefix":"","limit":1}' \
+      -o /dev/null \
+      -w "HTTP %{http_code}\n"
+  
+    echo "Đã ping Supabase thành công."
