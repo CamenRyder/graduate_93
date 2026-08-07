@@ -33,7 +33,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
     if (context.canPop()) {
       context.pop();
     } else {
-      context.go('/posts');
+      context.go('/');
     }
   }
 
@@ -62,8 +62,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('Không tải được bài viết:\n${snapshot.error}',
-                    textAlign: TextAlign.center),
+                child: Text(
+                  'Không tải được bài viết:\n${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
               ),
             );
           }
@@ -73,8 +75,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
 
           final post = snapshot.data;
           // Bài không tồn tại, hoặc là bản nháp mà người xem không phải admin.
-          if (post == null ||
-              (!post.published && !authController.isLoggedIn)) {
+          if (post == null || (!post.published && !authController.isLoggedIn)) {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
@@ -109,7 +110,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: colorScheme.tertiaryContainer,
                         borderRadius: BorderRadius.circular(999),
@@ -182,8 +185,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
     };
 
     // Tô màu nền nếu khối có highlight (cùng logic màu với trình soạn).
-    final highlightBg =
-        RowPalette.backgroundFor(block.highlight, Theme.of(context).brightness);
+    final highlightBg = RowPalette.backgroundFor(
+      block.highlight,
+      Theme.of(context).brightness,
+    );
     if (highlightBg != null) {
       content = Container(
         width: double.infinity,
@@ -250,14 +255,17 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       fit: BoxFit.contain,
                       loadingBuilder: (context, child, progress) =>
                           progress == null
-                              ? child
-                              : const Center(
-                                  child: CircularProgressIndicator(
-                                      color: Colors.white),
-                                ),
+                          ? child
+                          : const Center(
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                              ),
+                            ),
                       errorBuilder: (context, error, stack) => const Center(
-                        child: Icon(Icons.broken_image_outlined,
-                            color: Colors.white),
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),

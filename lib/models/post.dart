@@ -19,12 +19,12 @@ enum PostBlockType {
 
   /// Nhãn tiếng Việt hiển thị trong menu chọn loại khối.
   String get label => switch (this) {
-        PostBlockType.heading => 'Đề mục',
-        PostBlockType.subheading => 'Đề mục phụ',
-        PostBlockType.paragraph => 'Đoạn văn',
-        PostBlockType.quote => 'Trích dẫn',
-        PostBlockType.image => 'Ảnh',
-      };
+    PostBlockType.heading => 'Đề mục',
+    PostBlockType.subheading => 'Đề mục phụ',
+    PostBlockType.paragraph => 'Đoạn văn',
+    PostBlockType.quote => 'Trích dẫn',
+    PostBlockType.image => 'Ảnh',
+  };
 
   /// Khối văn bản (mọi loại trừ ảnh) — có `text` + có thể tô màu nền.
   bool get isText => this != PostBlockType.image;
@@ -155,18 +155,18 @@ class Post {
     return '';
   }
 
-  /// Đoạn văn bản (không rỗng) đầu tiên — dùng làm trích đoạn cho thẻ
-  /// danh sách. Rỗng nếu bài chưa có chữ nào.
+  /// Ghép các đoạn văn bản thành phần giới thiệu cho thẻ danh sách. UI giới hạn
+  /// còn 3 dòng nên người đọc thấy được vài câu đầu mà không lộ toàn bộ bài.
   String get snippet {
-    for (final b in blocks) {
-      if (b.type.isText && b.text.trim().isNotEmpty) return b.text.trim();
-    }
-    return '';
+    return blocks
+        .where((b) => b.type.isText && b.text.trim().isNotEmpty)
+        .map((b) => b.text.trim())
+        .join(' ');
   }
 
   /// Đường dẫn Storage của toàn bộ khối ảnh — để xóa file khi xóa bài viết.
   List<String> get imagePaths => [
-        for (final b in blocks)
-          if (b.type == PostBlockType.image && b.path.isNotEmpty) b.path,
-      ];
+    for (final b in blocks)
+      if (b.type == PostBlockType.image && b.path.isNotEmpty) b.path,
+  ];
 }

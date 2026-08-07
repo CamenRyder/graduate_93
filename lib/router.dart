@@ -14,7 +14,7 @@ import 'pages/love_page.dart';
 import 'pages/post_detail_page.dart';
 import 'pages/post_editor_page.dart';
 import 'pages/posts_admin_page.dart';
-import 'pages/posts_list_page.dart';
+import 'pages/posts_page.dart';
 import 'pages/scheduled_page.dart';
 import 'pages/user_gallery_page.dart';
 import 'pages/welcome_page.dart';
@@ -22,7 +22,10 @@ import 'pages/welcome_page.dart';
 /// Cấu hình điều hướng theo URL.
 ///
 /// Công khai (không cần đăng nhập):
-///  - `/`          : xác thực khách mời (nhập code + số điện thoại)
+///  - `/`          : danh sách bài viết đã đăng
+///  - `/posts`     : alias danh sách bài viết (dùng cho trang admin xem trước)
+///  - `/posts/:id` : đọc chi tiết 1 bài viết đã đăng
+///  - `/auth`      : xác thực khách mời (nhập code + số điện thoại)
 ///  - `/countdown` : trang đếm ngược đến sự kiện
 ///  - `/login`     : đăng nhập admin
 /// Cần khách đã xác thực:
@@ -30,9 +33,6 @@ import 'pages/welcome_page.dart';
 ///  - `/invite`    : chi tiết lời mời + xác nhận
 ///  - `/scheduled` : lịch hẹn              (sau khi xác nhận)
 ///  - `/guide`     : hướng dẫn di chuyển
-/// Khách đã xác thực HOẶC admin:
-///  - `/posts`     : danh sách bài viết (khách chỉ thấy bài đã đăng)
-///  - `/posts/:id` : đọc 1 bài viết
 /// Cần đăng nhập admin:
 ///  - `/admin`                : trang quản trị
 ///  - `/admin/posts`          : quản lý bài viết
@@ -55,13 +55,9 @@ final router = GoRouter(
     // Đã đăng nhập mà mở /login -> vào /admin.
     if (loc == '/login' && loggedIn) return '/admin';
 
-    // Trang bài viết: cho khách đã xác thực HOẶC admin; còn lại về nhập code.
-    final isPosts = loc == '/posts' || loc.startsWith('/posts/');
-    if (isPosts && !guestAuthed && !loggedIn) return '/';
-
     // Khách đã xác thực ở trang nhập code: đã xác nhận thì vào thẳng lịch hẹn,
     // chưa thì vào trang chào (chặn quay lại trang nhập code khi back/reload).
-    if (loc == '/' && guestAuthed) {
+    if (loc == '/auth' && guestAuthed) {
       return confirmed ? '/scheduled' : '/welcome';
     }
 
@@ -71,19 +67,20 @@ final router = GoRouter(
     }
 
     // Các trang chỉ dành cho khách đã xác thực -> chưa xác thực thì về nhập code.
-    const guestOnly = ['/welcome', '/invite', '/scheduled', '/guide', '/photos'];
-    if (guestOnly.contains(loc) && !guestAuthed) return '/';
+    const guestOnly = [
+      '/welcome',
+      '/invite',
+      '/scheduled',
+      '/guide',
+      '/photos',
+    ];
+    if (guestOnly.contains(loc) && !guestAuthed) return '/auth';
     return null;
   },
   routes: [
-    GoRoute(
-      path: '/',
-      builder: (context, state) => const AuthPage(),
-    ),
-    GoRoute(
-      path: '/welcome',
-      builder: (context, state) => const WelcomePage(),
-    ),
+    GoRoute(path: '/', builder: (context, state) => const PostsPage()),
+    GoRoute(path: '/auth', builder: (context, state) => const AuthPage()),
+    GoRoute(path: '/welcome', builder: (context, state) => const WelcomePage()),
     GoRoute(
       path: '/invite',
       builder: (context, state) => const InviteDetailPage(),
@@ -92,10 +89,7 @@ final router = GoRouter(
       path: '/scheduled',
       builder: (context, state) => const ScheduledPage(),
     ),
-    GoRoute(
-      path: '/guide',
-      builder: (context, state) => const GuidePage(),
-    ),
+    GoRoute(path: '/guide', builder: (context, state) => const GuidePage()),
     GoRoute(
       path: '/photos',
       builder: (context, state) => const UserGalleryPage(),
@@ -104,14 +98,8 @@ final router = GoRouter(
       path: '/countdown',
       builder: (context, state) => const CountdownPage(),
     ),
-    GoRoute(
-      path: '/login',
-      builder: (context, state) => const LoginPage(),
-    ),
-    GoRoute(
-      path: '/admin',
-      builder: (context, state) => const AdminPage(),
-    ),
+    GoRoute(path: '/login', builder: (context, state) => const LoginPage()),
+    GoRoute(path: '/admin', builder: (context, state) => const AdminPage()),
     GoRoute(
       path: '/admin/posts',
       builder: (context, state) => const PostsAdminPage(),
@@ -127,20 +115,14 @@ final router = GoRouter(
     ),
     GoRoute(
       path: '/posts',
-      builder: (context, state) => const PostsListPage(),
+      builder: (context, state) => const PostsPage(showBackButton: true),
     ),
     GoRoute(
       path: '/posts/:id',
       builder: (context, state) =>
           PostDetailPage(postId: state.pathParameters['id'] ?? ''),
     ),
-    GoRoute(
-      path: '/gallery',
-      builder: (context, state) => const GalleryPage(),
-    ),
-    GoRoute(
-      path: '/love',
-      builder: (context, state) => const LovePage(),
-    ),
+    GoRoute(path: '/gallery', builder: (context, state) => const GalleryPage()),
+    GoRoute(path: '/love', builder: (context, state) => const LovePage()),
   ],
 );

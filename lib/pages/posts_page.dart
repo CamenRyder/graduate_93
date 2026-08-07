@@ -2,35 +2,34 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../controllers/auth_controller.dart';
-import '../controllers/guest_controller.dart';
 import '../models/post.dart';
 import '../services/post_service.dart';
 import '../widgets/theme_toggle_button.dart';
 
-/// Trang ĐỌC danh sách bài viết — cho khách đã xác thực lẫn admin.
+/// Trang chủ công khai hiển thị danh sách bài viết.
 ///
-/// - Khách: chỉ thấy bài đã đăng (`published == true`).
+/// - Mọi người: chỉ thấy bài đã đăng (`published == true`).
 /// - Admin: thấy cả bản nháp (gắn nhãn "Nháp") để xem trước.
 /// Chạm vào thẻ để mở bài chi tiết (`/posts/:id`).
-class PostsListPage extends StatefulWidget {
-  const PostsListPage({super.key});
+class PostsPage extends StatefulWidget {
+  const PostsPage({super.key, this.showBackButton = false});
+
+  /// Route `/` là trang chủ nên không có nút quay lại. Route `/posts` được
+  /// admin dùng để xem trước và vẫn cần nút quay lại trang quản lý.
+  final bool showBackButton;
 
   @override
-  State<PostsListPage> createState() => _PostsListPageState();
+  State<PostsPage> createState() => _PostsPageState();
 }
 
-class _PostsListPageState extends State<PostsListPage> {
+class _PostsPageState extends State<PostsPage> {
   late final Stream<List<Post>> _stream = PostService().watchPosts();
 
-  /// Quay lại nơi hợp lý: pop nếu được (vd admin push từ trang quản lý),
-  /// không thì khách về lịch hẹn, admin về trang quản lý bài viết.
   void _goBack() {
     if (context.canPop()) {
       context.pop();
-    } else if (guestController.isAuthenticated) {
-      context.go('/scheduled');
     } else {
-      context.go('/admin/posts');
+      context.go('/');
     }
   }
 
@@ -46,11 +45,14 @@ class _PostsListPageState extends State<PostsListPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Bài viết'),
-        leading: IconButton(
-          tooltip: 'Quay lại',
-          icon: const Icon(Icons.arrow_back),
-          onPressed: _goBack,
-        ),
+        automaticallyImplyLeading: false,
+        leading: widget.showBackButton
+            ? IconButton(
+                tooltip: 'Quay lại',
+                icon: const Icon(Icons.arrow_back),
+                onPressed: _goBack,
+              )
+            : null,
         actions: const [ThemeToggleButton(), SizedBox(width: 8)],
       ),
       body: StreamBuilder<List<Post>>(
@@ -60,8 +62,10 @@ class _PostsListPageState extends State<PostsListPage> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('Không tải được bài viết:\n${snapshot.error}',
-                    textAlign: TextAlign.center),
+                child: Text(
+                  'Không tải được bài viết:\n${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
               ),
             );
           }
@@ -113,13 +117,11 @@ class _PostsListPageState extends State<PostsListPage> {
                 child: Image.network(
                   cover,
                   fit: BoxFit.cover,
-                  loadingBuilder: (context, child, progress) =>
-                      progress == null
-                          ? child
-                          : const Center(child: CircularProgressIndicator()),
-                  errorBuilder: (context, error, stack) => const Center(
-                    child: Icon(Icons.broken_image_outlined),
-                  ),
+                  loadingBuilder: (context, child, progress) => progress == null
+                      ? child
+                      : const Center(child: CircularProgressIndicator()),
+                  errorBuilder: (context, error, stack) =>
+                      const Center(child: Icon(Icons.broken_image_outlined)),
                 ),
               ),
             Padding(
@@ -147,7 +149,9 @@ class _PostsListPageState extends State<PostsListPage> {
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: colorScheme.tertiaryContainer,
                             borderRadius: BorderRadius.circular(999),
