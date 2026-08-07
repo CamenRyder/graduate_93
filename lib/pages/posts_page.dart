@@ -1,21 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../controllers/auth_controller.dart';
 import '../models/post.dart';
 import '../services/post_service.dart';
 import '../widgets/theme_toggle_button.dart';
 
-/// Trang chủ công khai hiển thị danh sách bài viết.
+/// Trang danh sách dành cho người đọc, chỉ hiển thị bài đã đăng.
 ///
-/// - Mọi người: chỉ thấy bài đã đăng (`published == true`).
-/// - Admin: thấy cả bản nháp (gắn nhãn "Nháp") để xem trước.
+/// Bản nháp chỉ xuất hiện ở màn quản lý `/admin/posts`, kể cả khi trình duyệt
+/// hiện vẫn còn phiên đăng nhập admin.
 /// Chạm vào thẻ để mở bài chi tiết (`/posts/:id`).
 class PostsPage extends StatefulWidget {
   const PostsPage({super.key, this.showBackButton = false});
 
-  /// Route `/` là trang chủ nên không có nút quay lại. Route `/posts` được
-  /// admin dùng để xem trước và vẫn cần nút quay lại trang quản lý.
+  /// Route `/` là trang chủ nên không có nút quay lại. Route `/posts` có nút
+  /// quay lại vì có thể được mở từ các màn khác.
   final bool showBackButton;
 
   @override
@@ -41,7 +40,6 @@ class _PostsPageState extends State<PostsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = authController.isLoggedIn;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Bài viết'),
@@ -73,10 +71,9 @@ class _PostsPageState extends State<PostsPage> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // Khách chỉ thấy bài đã đăng; admin thấy cả nháp để xem trước.
-          final posts = isAdmin
-              ? snapshot.data!
-              : snapshot.data!.where((p) => p.published).toList();
+          // Đây luôn là màn hình của người đọc: tuyệt đối không hiện bản nháp,
+          // kể cả trình duyệt đang giữ phiên đăng nhập admin.
+          final posts = snapshot.data!.where((p) => p.published).toList();
           if (posts.isEmpty) {
             return const Center(child: Text('Chưa có bài viết nào.'));
           }
@@ -129,44 +126,15 @@ class _PostsPageState extends State<PostsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          post.title.trim().isEmpty
-                              ? '(Chưa có tiêu đề)'
-                              : post.title,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            height: 1.3,
-                          ),
-                        ),
-                      ),
-                      // Bản nháp — chỉ admin nhìn thấy trong danh sách.
-                      if (!post.published) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colorScheme.tertiaryContainer,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            'Nháp',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w600,
-                              color: colorScheme.onTertiaryContainer,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
+                  Text(
+                    post.title.trim().isEmpty
+                        ? '(Chưa có tiêu đề)'
+                        : post.title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      height: 1.3,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(

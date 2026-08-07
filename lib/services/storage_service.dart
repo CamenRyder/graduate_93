@@ -30,8 +30,8 @@ class GalleryImage {
 /// LƯU Ý: cần tạo bucket [SupabaseConfig.galleryBucket] (đặt Public để đọc
 /// công khai) + cấu hình Storage policies cho phép upload/list/xóa.
 class StorageService {
-  /// Tiền tố "thư mục" chứa ảnh của BÀI VIẾT trong bucket (tách khỏi kho
-  /// ảnh gallery vốn lưu phẳng ở gốc bucket).
+  /// Tiền tố cũ từng chứa ảnh riêng của BÀI VIẾT. Ảnh bài viết mới được đưa
+  /// vào kho chung ở gốc bucket; giữ hằng số này để đọc/xóa dữ liệu cũ an toàn.
   static const String postsPrefix = 'posts';
 
   SupabaseStorageClient get _storage => Supabase.instance.client.storage;
@@ -52,8 +52,8 @@ class StorageService {
     );
   }
 
-  /// Upload 1 ảnh cho BÀI VIẾT: lưu dưới `posts/<timestamp>_<filename>`
-  /// (cùng cách làm sạch tên + đoán content-type với [uploadImage]).
+  /// Upload kiểu cũ cho dữ liệu cần tương thích: lưu dưới
+  /// `posts/<timestamp>_<filename>`. Trình soạn mới không gọi hàm này.
   Future<GalleryImage> uploadPostImage({
     required Uint8List bytes,
     required String filename,
@@ -65,6 +65,11 @@ class StorageService {
       contentType: contentType,
     );
   }
+
+  /// `true` với ảnh cũ được trình soạn sở hữu riêng dưới `posts/`.
+  /// Ảnh ở gốc bucket thuộc kho dùng chung và không được xóa khi gỡ/xóa bài.
+  static bool isPostOwnedImagePath(String fullPath) =>
+      fullPath.startsWith('$postsPrefix/');
 
   /// Tên file an toàn kèm tiền tố timestamp để không trùng và giữ thứ tự upload.
   String _stampedName(String filename) {
@@ -79,7 +84,9 @@ class StorageService {
     required Uint8List bytes,
     String? contentType,
   }) async {
-    await _storage.from(_bucket).uploadBinary(
+    await _storage
+        .from(_bucket)
+        .uploadBinary(
           path,
           bytes,
           fileOptions: FileOptions(
@@ -95,10 +102,12 @@ class StorageService {
     );
   }
 
-  /// Liệt kê toàn bộ ảnh Ở GỐC bucket (kho ảnh gallery), mới nhất lên đầu.
-  /// Ảnh bài viết nằm trong "thư mục" `posts/` nên không lẫn vào đây.
+  /// Liệt kê toàn bộ ảnh Ở GỐC bucket (kho ảnh dùng chung), mới nhất lên đầu.
+  /// Chỉ ảnh bài viết kiểu cũ nằm dưới `posts/` mới không xuất hiện tại đây.
   Future<List<GalleryImage>> listImages() async {
-    final objects = await _storage.from(_bucket).list(
+    final objects = await _storage
+        .from(_bucket)
+        .list(
           searchOptions: const SearchOptions(
             // Supabase trả tối đa 100 mặc định; nâng lên cho kho lớn hơn.
             limit: 1000,
@@ -133,10 +142,10 @@ class StorageService {
     return _storage.from(_bucket).remove(fullPaths);
   }
 
-  /// Xóa ảnh của BÀI VIẾT (đường dẫn dạng `posts/...` lưu trong field `path`
-  /// của khối ảnh) — gọi khi gỡ 1 khối ảnh hoặc xóa cả bài viết.
-  Future<void> deletePostImages(List<String> fullPaths) =>
-      deleteImages(fullPaths);
+  /// Xóa các ảnh CŨ do bài viết sở hữu riêng. Chủ động lọc prefix `posts/`
+  /// để ảnh thuộc kho dùng chung không bao giờ bị xóa khi gỡ/xóa bài.
+  Future<void> deletePostImages(Iterable<String> fullPaths) =>
+      deleteImages(fullPaths.where(isPostOwnedImagePath).toList());
 
   /// Tải bytes của 1 ảnh từ bucket (dùng để lưu ảnh về máy / đóng gói ZIP).
   Future<Uint8List> downloadBytes(String fullPath) {

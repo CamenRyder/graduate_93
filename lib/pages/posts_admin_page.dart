@@ -11,7 +11,8 @@ import '../widgets/theme_toggle_button.dart';
 /// thái Đăng/Nháp), tạo bài mới, sửa, xóa.
 ///
 /// - Nội dung bài: Firestore collection `posts` (xem PostService).
-/// - Ảnh trong bài: Supabase Storage prefix `posts/` — xóa bài sẽ xóa kèm ảnh.
+/// - Ảnh mới dùng kho ảnh chung nên xóa bài chỉ gỡ liên kết. Riêng ảnh cũ dưới
+///   prefix `posts/` vẫn được xóa kèm để không để lại file rác.
 class PostsAdminPage extends StatefulWidget {
   const PostsAdminPage({super.key});
 
@@ -54,15 +55,19 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
     }
   }
 
-  /// Xóa bài viết + toàn bộ ảnh của bài trên Storage.
+  /// Xóa bài viết và chỉ xóa file ảnh cũ mà bài sở hữu riêng.
   Future<void> _delete(Post post) async {
-    final imageCount = post.imagePaths.length;
+    final ownedImageCount = post.imagePaths
+        .where(StorageService.isPostOwnedImagePath)
+        .length;
     final confirm = await showConfirmDialog(
       context,
       title: 'Xóa bài viết?',
-      message: imageCount > 0
-          ? 'Bài "${post.title}" và $imageCount ảnh trong bài sẽ bị xóa vĩnh viễn.'
-          : 'Bài "${post.title}" sẽ bị xóa vĩnh viễn.',
+      message: ownedImageCount > 0
+          ? 'Bài "${post.title}" và $ownedImageCount ảnh cũ lưu riêng sẽ '
+                'bị xóa. Ảnh thuộc kho dùng chung vẫn được giữ lại.'
+          : 'Bài "${post.title}" sẽ bị xóa. Ảnh trong kho dùng chung vẫn '
+                'được giữ lại.',
       confirmLabel: 'Xóa',
       icon: Icons.delete_outline,
       destructive: true,
@@ -124,8 +129,10 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('Lỗi khi đọc bài viết:\n${snapshot.error}',
-                    textAlign: TextAlign.center),
+                child: Text(
+                  'Lỗi khi đọc bài viết:\n${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
               ),
             );
           }
@@ -178,7 +185,9 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w600),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(

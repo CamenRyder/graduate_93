@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../models/post.dart';
-import '../services/image_compressor.dart';
+import '../services/post_image_upload_middleware.dart';
 import '../services/post_service.dart';
 import '../services/storage_service.dart';
 import '../theme/post_styles.dart';
 import '../theme/row_palette.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/gallery_image_picker_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
 
 /// Trình soạn bài viết dạng KHỐI (tự viết, không dùng thư viện editor):
@@ -17,9 +18,9 @@ import '../widgets/theme_toggle_button.dart';
 ///
 /// - Khối văn bản: TextField nhiều dòng tự giãn theo nội dung, đổi được loại,
 ///   tô được màu nền (tái dùng RowPalette — hợp cả Sáng lẫn Tối).
-/// - Khối ảnh: chọn file như kho ảnh (FilePicker, withData) -> nén -> upload
-///   lên Supabase Storage prefix `posts/` -> xem trước ngay. Gỡ khối ảnh sẽ
-///   xóa luôn file trên Storage.
+/// - Khối ảnh: chọn từ kho ảnh hệ thống hoặc từ thiết bị. Ảnh từ thiết bị bắt
+///   buộc qua middleware resize/nén rồi đưa vào kho ảnh chung ở trạng thái
+///   chưa phân loại. Gỡ ảnh khỏi bài không xóa ảnh trong kho dùng chung.
 /// - Sắp xếp: nút lên/xuống trên từng khối; Lưu = tạo/cập nhật document.
 ///
 /// [postId] = null -> viết bài mới; khác null -> sửa bài đã có.
@@ -36,14 +37,14 @@ class PostEditorPage extends StatefulWidget {
 /// khối văn bản; khối ảnh chỉ giữ url + path đã upload).
 class _BlockDraft {
   _BlockDraft.text(this.type, {String text = '', this.highlight = ''})
-      : ctrl = TextEditingController(text: text),
-        url = '',
-        path = '';
+    : ctrl = TextEditingController(text: text),
+      url = '',
+      path = '';
 
   _BlockDraft.image({required this.url, required this.path})
-      : type = PostBlockType.image,
-        ctrl = null,
-        highlight = '';
+    : type = PostBlockType.image,
+      ctrl = null,
+      highlight = '';
 
   PostBlockType type;
   final TextEditingController? ctrl;
@@ -60,6 +61,7 @@ class _BlockDraft {
 class _PostEditorPageState extends State<PostEditorPage> {
   final _service = PostService();
   final _storage = StorageService();
+  final _imageUpload = PostImageUploadMiddleware();
 
   final _titleCtrl = TextEditingController();
   final _blocks = <_BlockDraft>[];
@@ -118,11 +120,17 @@ class _PostEditorPageState extends State<PostEditorPage> {
       _titleCtrl.text = post.title;
       _blocks
         ..clear()
-        ..addAll(post.blocks.map(
-          (b) => b.type == PostBlockType.image
-              ? _BlockDraft.image(url: b.url, path: b.path)
-              : _BlockDraft.text(b.type, text: b.text, highlight: b.highlight),
-        ));
+        ..addAll(
+          post.blocks.map(
+            (b) => b.type == PostBlockType.image
+                ? _BlockDraft.image(url: b.url, path: b.path)
+                : _BlockDraft.text(
+                    b.type,
+                    text: b.text,
+                    highlight: b.highlight,
+                  ),
+          ),
+        );
       setState(() {
         _published = post.published;
         _loading = false;
@@ -177,23 +185,80 @@ class _PostEditorPageState extends State<PostEditorPage> {
     );
     if (type == null || !mounted) return;
     if (type == PostBlockType.image) {
-      await _pickAndUploadImages();
+      await _chooseImageSource();
     } else {
       setState(() => _blocks.add(_BlockDraft.text(type)));
     }
   }
 
   IconData _typeIcon(PostBlockType t) => switch (t) {
-        PostBlockType.heading => Icons.title,
-        PostBlockType.subheading => Icons.text_fields,
-        PostBlockType.paragraph => Icons.notes,
-        PostBlockType.quote => Icons.format_quote,
-        PostBlockType.image => Icons.image_outlined,
-      };
+    PostBlockType.heading => Icons.title,
+    PostBlockType.subheading => Icons.text_fields,
+    PostBlockType.paragraph => Icons.notes,
+    PostBlockType.quote => Icons.format_quote,
+    PostBlockType.image => Icons.image_outlined,
+  };
 
-  /// Chọn ảnh từ máy (như kho ảnh: withData để có bytes trên web), nén rồi
-  /// upload lên `posts/` — mỗi ảnh thành 1 khối ảnh ở cuối bài.
-  Future<void> _pickAndUploadImages() async {
+  /// Chọn nguồn ảnh trước khi thêm khối: kho dùng chung hoặc thiết bị.
+  Future<void> _chooseImageSource() async {
+    final source = await showModalBottomSheet<_PostImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                'Chọn nguồn hình ảnh',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Kho ảnh hệ thống'),
+              subtitle: const Text('Dùng lại ảnh đã có trong kho dùng chung'),
+              onTap: () => Navigator.pop(ctx, _PostImageSource.systemGallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.devices_outlined),
+              title: const Text('Chọn từ thiết bị'),
+              subtitle: const Text(
+                'Ảnh sẽ được giảm dung lượng và thêm vào kho chung',
+              ),
+              onTap: () => Navigator.pop(ctx, _PostImageSource.device),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    switch (source) {
+      case _PostImageSource.systemGallery:
+        await _pickImagesFromSystemGallery();
+      case _PostImageSource.device:
+        await _pickAndUploadDeviceImages();
+    }
+  }
+
+  /// Chọn nhiều ảnh đã có trong kho. Chỉ tạo liên kết trong bài, không upload
+  /// bản sao và không thay đổi metadata phân loại của ảnh.
+  Future<void> _pickImagesFromSystemGallery() async {
+    final images = await showGalleryImagePickerDialog(context);
+    if (images == null || images.isEmpty || !mounted) return;
+    setState(() {
+      for (final image in images) {
+        _blocks.add(_BlockDraft.image(url: image.url, path: image.fullPath));
+      }
+    });
+    _showToast('Đã thêm ${images.length} ảnh từ kho hệ thống');
+  }
+
+  /// Chọn ảnh từ máy (withData để có bytes trên web). Mọi file bắt buộc đi
+  /// qua [PostImageUploadMiddleware], sau đó mỗi ảnh thành 1 khối cuối bài.
+  Future<void> _pickAndUploadDeviceImages() async {
     final result = await FilePicker.pickFiles(
       type: FileType.image,
       allowMultiple: true,
@@ -203,6 +268,9 @@ class _PostEditorPageState extends State<PostEditorPage> {
 
     setState(() => _uploading = true);
     var fail = 0;
+    var uploaded = 0;
+    var totalOriginal = 0;
+    var totalStored = 0;
     for (final file in result.files) {
       final bytes = file.bytes;
       if (bytes == null) {
@@ -210,15 +278,21 @@ class _PostEditorPageState extends State<PostEditorPage> {
         continue;
       }
       try {
-        final c = await compressImage(bytes, file.name);
-        final img = await _storage.uploadPostImage(
-          bytes: c.bytes,
-          filename: c.filename,
-          contentType: c.contentType,
+        final result = await _imageUpload.uploadDeviceImage(
+          bytes: bytes,
+          filename: file.name,
         );
+        uploaded++;
+        totalOriginal += result.originalSize;
+        totalStored += result.storedSize;
         if (!mounted) return;
         setState(
-          () => _blocks.add(_BlockDraft.image(url: img.url, path: img.fullPath)),
+          () => _blocks.add(
+            _BlockDraft.image(
+              url: result.image.url,
+              path: result.image.fullPath,
+            ),
+          ),
         );
       } catch (_) {
         fail++;
@@ -226,30 +300,41 @@ class _PostEditorPageState extends State<PostEditorPage> {
     }
     if (!mounted) return;
     setState(() => _uploading = false);
-    if (fail > 0) _showToast('Tải lên lỗi $fail ảnh', isError: true);
+    final base = fail == 0
+        ? 'Đã thêm $uploaded ảnh vào bài và kho ảnh chung'
+        : 'Đã thêm $uploaded ảnh, lỗi $fail ảnh';
+    final compression = totalOriginal > 0
+        ? ' · ${_formatBytes(totalOriginal)} → ${_formatBytes(totalStored)}'
+        : '';
+    _showToast('$base$compression', isError: fail > 0);
   }
 
-  /// Gỡ 1 khối. Khối ảnh -> hỏi xác nhận rồi xóa luôn file trên Storage;
-  /// khối văn bản còn chữ -> hỏi xác nhận cho khỏi lỡ tay.
+  /// Gỡ 1 khối. Ảnh kho chung chỉ gỡ khỏi bài; ảnh cũ dưới `posts/` vẫn xóa
+  /// file riêng như trước. Khối văn bản có chữ sẽ hỏi để tránh lỡ tay.
   Future<void> _removeBlock(int index) async {
     final d = _blocks[index];
 
     if (d.type == PostBlockType.image) {
+      final isLegacyOwned = StorageService.isPostOwnedImagePath(d.path);
       final confirm = await showConfirmDialog(
         context,
         title: 'Gỡ ảnh khỏi bài?',
-        message: 'Ảnh sẽ bị xóa vĩnh viễn khỏi kho lưu trữ.',
+        message: isLegacyOwned
+            ? 'Đây là ảnh cũ lưu riêng cho bài và sẽ bị xóa khỏi bộ nhớ.'
+            : 'Ảnh chỉ được gỡ khỏi bài viết và vẫn còn trong kho ảnh chung.',
         confirmLabel: 'Gỡ ảnh',
         icon: Icons.delete_outline,
-        destructive: true,
+        destructive: isLegacyOwned,
       );
       if (!confirm || !mounted) return;
-      try {
-        await _storage.deletePostImages([d.path]);
-      } catch (e) {
-        if (mounted) _showToast('Xóa file ảnh thất bại: $e', isError: true);
+      if (isLegacyOwned) {
+        try {
+          await _storage.deletePostImages([d.path]);
+        } catch (e) {
+          if (mounted) _showToast('Xóa file ảnh thất bại: $e', isError: true);
+        }
+        if (!mounted) return;
       }
-      if (!mounted) return;
     } else if (d.ctrl!.text.trim().isNotEmpty) {
       final confirm = await showConfirmDialog(
         context,
@@ -341,8 +426,7 @@ class _PostEditorPageState extends State<PostEditorPage> {
           ),
           Switch(
             value: _published,
-            onChanged:
-                _saving ? null : (v) => setState(() => _published = v),
+            onChanged: _saving ? null : (v) => setState(() => _published = v),
           ),
           const ThemeToggleButton(),
           const SizedBox(width: 8),
@@ -442,8 +526,10 @@ class _PostEditorPageState extends State<PostEditorPage> {
     final colorScheme = Theme.of(context).colorScheme;
     final d = _blocks[index];
     // Màu nền tô sáng của khối — cùng logic với trang đọc.
-    final highlightBg =
-        RowPalette.backgroundFor(d.highlight, Theme.of(context).brightness);
+    final highlightBg = RowPalette.backgroundFor(
+      d.highlight,
+      Theme.of(context).brightness,
+    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -469,9 +555,7 @@ class _PostEditorPageState extends State<PostEditorPage> {
               _iconBtn(
                 Icons.arrow_downward,
                 'Chuyển xuống',
-                index == _blocks.length - 1
-                    ? null
-                    : () => _moveBlock(index, 1),
+                index == _blocks.length - 1 ? null : () => _moveBlock(index, 1),
               ),
               _iconBtn(
                 Icons.delete_outline,
@@ -528,8 +612,11 @@ class _PostEditorPageState extends State<PostEditorPage> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(_typeIcon(d.type), size: 16,
-                color: colorScheme.onSurfaceVariant),
+            Icon(
+              _typeIcon(d.type),
+              size: 16,
+              color: colorScheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 6),
             Text(
               d.type.label,
@@ -539,8 +626,11 @@ class _PostEditorPageState extends State<PostEditorPage> {
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
-            Icon(Icons.arrow_drop_down, size: 18,
-                color: colorScheme.onSurfaceVariant),
+            Icon(
+              Icons.arrow_drop_down,
+              size: 18,
+              color: colorScheme.onSurfaceVariant,
+            ),
           ],
         ),
       ),
@@ -554,8 +644,11 @@ class _PostEditorPageState extends State<PostEditorPage> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.image_outlined, size: 16,
-              color: colorScheme.onSurfaceVariant),
+          Icon(
+            Icons.image_outlined,
+            size: 16,
+            color: colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(width: 6),
           Text(
             'Ảnh',
@@ -590,8 +683,11 @@ class _PostEditorPageState extends State<PostEditorPage> {
         height: 34,
         child: Center(
           child: current == null
-              ? Icon(Icons.format_color_fill, size: 18,
-                  color: colorScheme.onSurfaceVariant)
+              ? Icon(
+                  Icons.format_color_fill,
+                  size: 18,
+                  color: colorScheme.onSurfaceVariant,
+                )
               : ColorDot(option: current, size: 18),
         ),
       ),
@@ -661,4 +757,13 @@ class _PostEditorPageState extends State<PostEditorPage> {
       constraints: const BoxConstraints.tightFor(width: 34, height: 34),
     );
   }
+
+  String _formatBytes(int bytes) {
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)}MB';
+    }
+    return '${(bytes / 1024).toStringAsFixed(0)}KB';
+  }
 }
+
+enum _PostImageSource { systemGallery, device }

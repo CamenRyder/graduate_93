@@ -37,19 +37,21 @@ Future<CompressedImage> compressImage(
   int targetBytes = 2 * 1024 * 1024, // ~2MB
   int startQuality = 90,
   int minQuality = 70,
+  bool preserveAnimatedGif = true,
 }) async {
   final lower = filename.toLowerCase();
   final originalSize = original.lengthInBytes;
 
   CompressedImage keepOriginal() => CompressedImage(
-        bytes: original,
-        filename: filename,
-        contentType: _guessContentType(lower),
-        originalSize: originalSize,
-      );
+    bytes: original,
+    filename: filename,
+    contentType: _guessContentType(lower),
+    originalSize: originalSize,
+  );
 
-  // GIF có thể là ảnh động -> không nén để khỏi mất hiệu ứng.
-  if (lower.endsWith('.gif')) return keepOriginal();
+  // Kho ảnh thông thường giữ GIF động. Riêng pipeline ảnh bài viết có thể
+  // tắt lựa chọn này để vẫn resize/nén (lấy frame đầu) như mọi ảnh từ máy.
+  if (preserveAnimatedGif && lower.endsWith('.gif')) return keepOriginal();
 
   final decoded = img.decodeImage(original);
   if (decoded == null) return keepOriginal();

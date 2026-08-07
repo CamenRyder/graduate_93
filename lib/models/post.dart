@@ -164,7 +164,8 @@ class Post {
         .join(' ');
   }
 
-  /// Đường dẫn Storage của toàn bộ khối ảnh — để xóa file khi xóa bài viết.
+  /// Đường dẫn Storage của toàn bộ khối ảnh. Nơi xóa phải lọc ảnh cũ dưới
+  /// `posts/`; ảnh ở gốc bucket thuộc kho dùng chung và chỉ được gỡ liên kết.
   List<String> get imagePaths => [
     for (final b in blocks)
       if (b.type == PostBlockType.image && b.path.isNotEmpty) b.path,

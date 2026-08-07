@@ -4,8 +4,8 @@ import '../models/post.dart';
 
 /// Lớp truy cập Firestore cho collection `posts` (bài viết).
 ///
-/// File ảnh của bài viết nằm ở Supabase Storage (prefix `posts/`, xem
-/// StorageService.uploadPostImage); Firestore chỉ lưu nội dung + link ảnh.
+/// Ảnh mới của bài viết dùng trực tiếp kho ảnh chung; Firestore chỉ lưu nội
+/// dung + link ảnh. Dữ liệu cũ có thể còn đường dẫn dưới prefix `posts/`.
 /// Rules sẵn có (catch-all) đã cho: đọc công khai, ghi chỉ admin — nên
 /// KHÔNG cần sửa firestore.rules.
 class PostService {
@@ -18,9 +18,10 @@ class PostService {
   /// (Cố tình không `where('published')` + `orderBy` cùng lúc để khỏi phải
   /// tạo composite index trên Firestore.)
   Stream<List<Post>> watchPosts() {
-    return _col.orderBy('time_created', descending: true).snapshots().map(
-          (snap) => [for (final doc in snap.docs) Post.fromFirestore(doc)],
-        );
+    return _col
+        .orderBy('time_created', descending: true)
+        .snapshots()
+        .map((snap) => [for (final doc in snap.docs) Post.fromFirestore(doc)]);
   }
 
   /// Lắng nghe 1 bài viết theo id; phát `null` nếu bài không tồn tại/đã xóa.

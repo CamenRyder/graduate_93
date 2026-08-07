@@ -23,7 +23,7 @@ import 'pages/welcome_page.dart';
 ///
 /// Công khai (không cần đăng nhập):
 ///  - `/`          : danh sách bài viết đã đăng
-///  - `/posts`     : alias danh sách bài viết (dùng cho trang admin xem trước)
+///  - `/posts`     : alias danh sách bài viết đã đăng
 ///  - `/posts/:id` : đọc chi tiết 1 bài viết đã đăng
 ///  - `/auth`      : xác thực khách mời (nhập code + số điện thoại)
 ///  - `/countdown` : trang đếm ngược đến sự kiện
