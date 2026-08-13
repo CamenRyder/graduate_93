@@ -12,6 +12,13 @@ import '../theme/row_palette.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/text_input_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
+import 'blog_admin_dashboard.dart';
+
+/// UI quản lý khách mời cũ vẫn được giữ nguyên để có thể bật lại khi cần:
+/// `flutter run --dart-define=SHOW_LEGACY_USERS_ADMIN=true`.
+/// Mặc định `/admin` dùng dashboard dành cho blog cá nhân.
+bool get _showLegacyUsersAdmin =>
+    const bool.fromEnvironment('SHOW_LEGACY_USERS_ADMIN', defaultValue: false);
 
 // ── Định nghĩa cột ──────────────────────────────────────────────────────────
 
@@ -23,26 +30,26 @@ class _Col {
 }
 
 const _kCols = [
-  _Col('id',          'ID',          80),
-  _Col('name',        'Name',        150),
-  _Col('who',         'who',         120),
-  _Col('me',          'me',          120),
-  _Col('email',       'Email',       190),
-  _Col('phone',       'Phone',       120),
-  _Col('address',     'Address',     150),
-  _Col('message',     'Message',     200),
-  _Col('des1',        'Des_1',       110),
-  _Col('des2',        'Des_2',       110),
-  _Col('des3',        'Des_3',       110),
+  _Col('id', 'ID', 80),
+  _Col('name', 'Name', 150),
+  _Col('who', 'who', 120),
+  _Col('me', 'me', 120),
+  _Col('email', 'Email', 190),
+  _Col('phone', 'Phone', 120),
+  _Col('address', 'Address', 150),
+  _Col('message', 'Message', 200),
+  _Col('des1', 'Des_1', 110),
+  _Col('des2', 'Des_2', 110),
+  _Col('des3', 'Des_3', 110),
   _Col('timeMeeting', 'timeMeeting', 120),
-  _Col('timeEnding',  'timeEnding',  120),
-  _Col('active',      'Active',       70),
-  _Col('confirm',     'Confirm',      80),
+  _Col('timeEnding', 'timeEnding', 120),
+  _Col('active', 'Active', 70),
+  _Col('confirm', 'Confirm', 80),
   _Col('showAllPhotos', 'Xem toàn bộ', 90),
-  _Col('updated',     'Cập nhật',   130),
+  _Col('updated', 'Cập nhật', 130),
 ];
 
-const _kPrefsOrder  = 'admin_col_order';
+const _kPrefsOrder = 'admin_col_order';
 const _kPrefsHidden = 'admin_col_hidden';
 
 // ── EditSession ──────────────────────────────────────────────────────────────
@@ -124,12 +131,12 @@ class _AdminPageState extends State<AdminPage> {
   @override
   void initState() {
     super.initState();
-    _loadColPrefs();
+    if (_showLegacyUsersAdmin) _loadColPrefs();
   }
 
   Future<void> _loadColPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final rawOrder  = prefs.getString(_kPrefsOrder);
+    final rawOrder = prefs.getString(_kPrefsOrder);
     final rawHidden = prefs.getString(_kPrefsHidden);
     if (!mounted) return;
     setState(() {
@@ -151,7 +158,7 @@ class _AdminPageState extends State<AdminPage> {
   Future<void> _saveColPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     await Future.wait([
-      prefs.setString(_kPrefsOrder,  jsonEncode(_colOrder)),
+      prefs.setString(_kPrefsOrder, jsonEncode(_colOrder)),
       prefs.setString(_kPrefsHidden, jsonEncode(_hiddenCols.toList())),
     ]);
   }
@@ -160,11 +167,11 @@ class _AdminPageState extends State<AdminPage> {
     showDialog<void>(
       context: context,
       builder: (_) => _ColumnPickerDialog(
-        colOrder:   List.of(_colOrder),
+        colOrder: List.of(_colOrder),
         hiddenCols: Set.of(_hiddenCols),
         onApply: (order, hidden) {
           setState(() {
-            _colOrder   = order;
+            _colOrder = order;
             _hiddenCols = hidden;
           });
           _saveColPrefs();
@@ -196,7 +203,9 @@ class _AdminPageState extends State<AdminPage> {
       if (_confirmFilter != null && u.isConfirm != _confirmFilter) return false;
       if (_colorFilter != null) {
         // Chuẩn hóa key lạ/cũ (không khớp bảng màu) thành "không màu" ('').
-        final normalized = RowPalette.byKey(u.rowColor) == null ? '' : u.rowColor;
+        final normalized = RowPalette.byKey(u.rowColor) == null
+            ? ''
+            : u.rowColor;
         if (normalized != _colorFilter) return false;
       }
       if (meeting.isNotEmpty &&
@@ -250,7 +259,11 @@ class _AdminPageState extends State<AdminPage> {
           child: _boolFilter(
             label: 'isActive',
             value: _activeFilter,
-            options: const {null: 'Tất cả', true: 'Đang hoạt động', false: 'Ngưng'},
+            options: const {
+              null: 'Tất cả',
+              true: 'Đang hoạt động',
+              false: 'Ngưng',
+            },
             onChanged: (v) => setState(() => _activeFilter = v),
           ),
         ),
@@ -263,10 +276,7 @@ class _AdminPageState extends State<AdminPage> {
             onChanged: (v) => setState(() => _confirmFilter = v),
           ),
         ),
-        SizedBox(
-          width: 190,
-          child: _colorFilterField(),
-        ),
+        SizedBox(width: 190, child: _colorFilterField()),
         SizedBox(
           width: 220,
           child: TextField(
@@ -304,10 +314,10 @@ class _AdminPageState extends State<AdminPage> {
           value: value,
           hint: Text(options[null] ?? 'Tất cả'),
           items: options.entries
-              .map((e) => DropdownMenuItem<bool?>(
-                    value: e.key,
-                    child: Text(e.value),
-                  ))
+              .map(
+                (e) =>
+                    DropdownMenuItem<bool?>(value: e.key, child: Text(e.value)),
+              )
               .toList(),
           onChanged: onChanged,
         ),
@@ -318,7 +328,10 @@ class _AdminPageState extends State<AdminPage> {
   /// Dropdown lọc theo màu hàng: Tất cả / Không màu / từng màu (kèm ô tròn).
   Widget _colorFilterField() {
     return InputDecorator(
-      decoration: const InputDecoration(labelText: 'Lọc theo màu', isDense: true),
+      decoration: const InputDecoration(
+        labelText: 'Lọc theo màu',
+        isDense: true,
+      ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String?>(
           isExpanded: true,
@@ -368,6 +381,12 @@ class _AdminPageState extends State<AdminPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_showLegacyUsersAdmin) return const BlogAdminDashboard();
+    return _buildLegacyUsersAdmin(context);
+  }
+
+  /// Dashboard quản lý user cũ. Giữ nguyên code và chỉ ẩn khỏi UI mặc định.
+  Widget _buildLegacyUsersAdmin(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Quản lý Users'),
@@ -477,7 +496,7 @@ class _AdminPageState extends State<AdminPage> {
                           addToken: _addToken,
                           reorderEnabled: reorderEnabled,
                           session: _session,
-                          colOrder:   _colOrder,
+                          colOrder: _colOrder,
                           hiddenCols: _hiddenCols,
                         ),
                       ),
@@ -526,8 +545,8 @@ class UsersTable extends StatefulWidget {
 
 class _UsersTableState extends State<UsersTable> {
   // Độ rộng cột cố định (không thể ẩn).
-  static const double _wHandle  = 40;
-  static const double _wIndex   = 44;
+  static const double _wHandle = 40;
+  static const double _wIndex = 44;
   static const double _wActions = 190;
 
   /// Các cột hiện tại theo đúng thứ tự + chỉ lấy cột không ẩn.
@@ -581,20 +600,20 @@ class _UsersTableState extends State<UsersTable> {
   String _editRowColor = '';
 
   List<TextEditingController> get _allCtrls => [
-        _idCtrl,
-        _nameCtrl,
-        _whoCtrl,
-        _meCtrl,
-        _emailCtrl,
-        _phoneCtrl,
-        _addressCtrl,
-        _messageCtrl,
-        _des1Ctrl,
-        _des2Ctrl,
-        _des3Ctrl,
-        _timeMeetingCtrl,
-        _timeEndingCtrl,
-      ];
+    _idCtrl,
+    _nameCtrl,
+    _whoCtrl,
+    _meCtrl,
+    _emailCtrl,
+    _phoneCtrl,
+    _addressCtrl,
+    _messageCtrl,
+    _des1Ctrl,
+    _des2Ctrl,
+    _des3Ctrl,
+    _timeMeetingCtrl,
+    _timeEndingCtrl,
+  ];
 
   bool get _canAct => _editingId == null && !_addingNew && !_busy;
 
@@ -611,10 +630,16 @@ class _UsersTableState extends State<UsersTable> {
             constraints: const BoxConstraints(maxWidth: 360),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: isError ? const Color(0xFFC62828) : const Color(0xFF2E7D32),
+              color: isError
+                  ? const Color(0xFFC62828)
+                  : const Color(0xFF2E7D32),
               borderRadius: BorderRadius.circular(8),
               boxShadow: const [
-                BoxShadow(color: Colors.black38, blurRadius: 8, offset: Offset(0, 4)),
+                BoxShadow(
+                  color: Colors.black38,
+                  blurRadius: 8,
+                  offset: Offset(0, 4),
+                ),
               ],
             ),
             child: Row(
@@ -626,7 +651,9 @@ class _UsersTableState extends State<UsersTable> {
                   size: 18,
                 ),
                 const SizedBox(width: 8),
-                Flexible(child: Text(msg, style: const TextStyle(color: Colors.white))),
+                Flexible(
+                  child: Text(msg, style: const TextStyle(color: Colors.white)),
+                ),
               ],
             ),
           ),
@@ -996,10 +1023,7 @@ class _UsersTableState extends State<UsersTable> {
   /// tới cuối, [floatLeft] chạm vị trí cột cuối nên cụm nút về đúng chỗ như
   /// một cột bình thường (bỏ bóng đổ). Chỉ lớp phủ này rebuild theo cuộn ngang,
   /// không rebuild cả danh sách.
-  Widget _pinnedActions({
-    required Color background,
-    required Widget child,
-  }) {
+  Widget _pinnedActions({required Color background, required Widget child}) {
     final colorScheme = Theme.of(context).colorScheme;
     return Positioned.fill(
       child: AnimatedBuilder(
@@ -1089,22 +1113,24 @@ class _UsersTableState extends State<UsersTable> {
     final colorScheme = Theme.of(context).colorScheme;
     final baseBg = colorScheme.surface;
     // Màu "holder" của hàng theo chế độ Sáng/Tối hiện hành (null = không tô).
-    final rowColor =
-        RowPalette.backgroundFor(u.rowColor, Theme.of(context).brightness);
+    final rowColor = RowPalette.backgroundFor(
+      u.rowColor,
+      Theme.of(context).brightness,
+    );
     // Nền hàng dạng ĐỤC để cột thao tác neo phải che sạch nội dung phía sau
     // khi đang nổi giữa khung nhìn. Khi đang sửa: ưu tiên tông "đang sửa".
     final rowBg = editing
         ? Color.alphaBlend(
-            colorScheme.primaryContainer.withValues(alpha: 0.2), baseBg)
+            colorScheme.primaryContainer.withValues(alpha: 0.2),
+            baseBg,
+          )
         : (rowColor ?? baseBg);
 
     return Container(
       key: ValueKey(u.id),
       decoration: BoxDecoration(
         color: rowBg,
-        border: Border(
-          bottom: BorderSide(color: colorScheme.outlineVariant),
-        ),
+        border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
       ),
       child: Stack(
         clipBehavior: Clip.none,
@@ -1120,7 +1146,9 @@ class _UsersTableState extends State<UsersTable> {
           ),
           _pinnedActions(
             background: rowBg,
-            child: editing ? _editActions(onCancel: _cancelEdit) : _rowActions(u),
+            child: editing
+                ? _editActions(onCancel: _cancelEdit)
+                : _rowActions(u),
           ),
         ],
       ),
@@ -1163,7 +1191,9 @@ class _UsersTableState extends State<UsersTable> {
     final canDrag = _canAct && widget.reorderEnabled;
     final icon = Icon(
       Icons.drag_indicator,
-      color: canDrag ? colorScheme.onSurfaceVariant : colorScheme.outlineVariant,
+      color: canDrag
+          ? colorScheme.onSurfaceVariant
+          : colorScheme.outlineVariant,
     );
     return _cell(
       _wHandle,
@@ -1181,48 +1211,66 @@ class _UsersTableState extends State<UsersTable> {
 
   List<Widget> _editCells() {
     Widget build(String key, double w) => switch (key) {
-      'id'          => _cell(w, _idEditField()),
-      'name'        => _cell(w, _miniField(_nameCtrl)),
-      'who'         => _cell(w, _miniField(_whoCtrl)),
-      'me'          => _cell(w, _miniField(_meCtrl)),
-      'email'       => _cell(w, _miniField(_emailCtrl)),
-      'phone'       => _cell(w, _miniField(_phoneCtrl)),
-      'address'     => _cell(w, _miniField(_addressCtrl)),
-      'message'     => _cell(w, _expandableField(_messageCtrl, 'Message')),
-      'des1'        => _cell(w, _expandableField(_des1Ctrl, 'Des_1')),
-      'des2'        => _cell(w, _expandableField(_des2Ctrl, 'Des_2')),
-      'des3'        => _cell(w, _expandableField(_des3Ctrl, 'Des_3')),
+      'id' => _cell(w, _idEditField()),
+      'name' => _cell(w, _miniField(_nameCtrl)),
+      'who' => _cell(w, _miniField(_whoCtrl)),
+      'me' => _cell(w, _miniField(_meCtrl)),
+      'email' => _cell(w, _miniField(_emailCtrl)),
+      'phone' => _cell(w, _miniField(_phoneCtrl)),
+      'address' => _cell(w, _miniField(_addressCtrl)),
+      'message' => _cell(w, _expandableField(_messageCtrl, 'Message')),
+      'des1' => _cell(w, _expandableField(_des1Ctrl, 'Des_1')),
+      'des2' => _cell(w, _expandableField(_des2Ctrl, 'Des_2')),
+      'des3' => _cell(w, _expandableField(_des3Ctrl, 'Des_3')),
       'timeMeeting' => _cell(w, _miniField(_timeMeetingCtrl)),
-      'timeEnding'  => _cell(w, _miniField(_timeEndingCtrl)),
-      'active'      => _cell(w, Switch(value: _editActive,  onChanged: (v) => setState(() => _editActive  = v))),
-      'confirm'     => _cell(w, Switch(value: _editConfirm, onChanged: (v) => setState(() => _editConfirm = v))),
-      'showAllPhotos' => _cell(w, Switch(value: _editShowAllPhotos, onChanged: (v) => setState(() => _editShowAllPhotos = v))),
-      'updated'     => _cell(w, const Text('-')),
-      _             => const SizedBox.shrink(),
+      'timeEnding' => _cell(w, _miniField(_timeEndingCtrl)),
+      'active' => _cell(
+        w,
+        Switch(
+          value: _editActive,
+          onChanged: (v) => setState(() => _editActive = v),
+        ),
+      ),
+      'confirm' => _cell(
+        w,
+        Switch(
+          value: _editConfirm,
+          onChanged: (v) => setState(() => _editConfirm = v),
+        ),
+      ),
+      'showAllPhotos' => _cell(
+        w,
+        Switch(
+          value: _editShowAllPhotos,
+          onChanged: (v) => setState(() => _editShowAllPhotos = v),
+        ),
+      ),
+      'updated' => _cell(w, const Text('-')),
+      _ => const SizedBox.shrink(),
     };
     return [for (final c in _visibleCols) build(c.key, c.width)];
   }
 
   List<Widget> _readCells(AppUser u) {
     Widget build(String key, double w) => switch (key) {
-      'id'          => _cell(w, Text('${u.userId}')),
-      'name'        => _cell(w, _readText(u.name)),
-      'who'         => _cell(w, _readText(u.who)),
-      'me'          => _cell(w, _readText(u.me)),
-      'email'       => _cell(w, _readText(u.email)),
-      'phone'       => _cell(w, _readText(u.phone)),
-      'address'     => _cell(w, _readText(u.address)),
-      'message'     => _cell(w, _readText(u.message)),
-      'des1'        => _cell(w, _readText(u.des1)),
-      'des2'        => _cell(w, _readText(u.des2)),
-      'des3'        => _cell(w, _readText(u.des3)),
+      'id' => _cell(w, Text('${u.userId}')),
+      'name' => _cell(w, _readText(u.name)),
+      'who' => _cell(w, _readText(u.who)),
+      'me' => _cell(w, _readText(u.me)),
+      'email' => _cell(w, _readText(u.email)),
+      'phone' => _cell(w, _readText(u.phone)),
+      'address' => _cell(w, _readText(u.address)),
+      'message' => _cell(w, _readText(u.message)),
+      'des1' => _cell(w, _readText(u.des1)),
+      'des2' => _cell(w, _readText(u.des2)),
+      'des3' => _cell(w, _readText(u.des3)),
       'timeMeeting' => _cell(w, _readText(u.timeMeeting)),
-      'timeEnding'  => _cell(w, _readText(u.timeEnding)),
-      'active'      => _cell(w, _boolIcon(u.isActive)),
-      'confirm'     => _cell(w, _boolIcon(u.isConfirm)),
+      'timeEnding' => _cell(w, _readText(u.timeEnding)),
+      'active' => _cell(w, _boolIcon(u.isActive)),
+      'confirm' => _cell(w, _boolIcon(u.isConfirm)),
       'showAllPhotos' => _cell(w, _boolIcon(u.showAllPhotos)),
-      'updated'     => _cell(w, Text(_formatTime(u.timeUpdated))),
-      _             => const SizedBox.shrink(),
+      'updated' => _cell(w, Text(_formatTime(u.timeUpdated))),
+      _ => const SizedBox.shrink(),
     };
     return [for (final c in _visibleCols) build(c.key, c.width)];
   }
@@ -1241,8 +1289,7 @@ class _UsersTableState extends State<UsersTable> {
       controller: c,
       // Multiline để Enter xuống dòng được (trừ ô số).
       keyboardType: number ? TextInputType.number : TextInputType.multiline,
-      inputFormatters:
-          number ? [FilteringTextInputFormatter.digitsOnly] : null,
+      inputFormatters: number ? [FilteringTextInputFormatter.digitsOnly] : null,
       // Tự giãn theo nội dung: 1 dòng khi text ngắn, rộng dần theo số dòng,
       // tối đa 5 dòng rồi cuộn bên trong ô.
       minLines: 1,
@@ -1265,11 +1312,15 @@ class _UsersTableState extends State<UsersTable> {
       child: InputDecorator(
         decoration: InputDecoration(
           isDense: true,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 8,
+          ),
           suffixIcon: const Icon(Icons.open_in_full, size: 16),
-          suffixIconConstraints:
-              const BoxConstraints(minWidth: 28, minHeight: 28),
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: 28,
+            minHeight: 28,
+          ),
         ),
         child: Text(
           text.isEmpty ? 'Nhấn để nhập…' : text,
@@ -1369,11 +1420,22 @@ class _UsersTableState extends State<UsersTable> {
       mainAxisSize: MainAxisSize.min,
       children: [
         _colorPickerButton(u),
-        _iconBtn(Icons.edit_outlined, 'Sửa', _canAct ? () => _startEdit(u) : null),
-        _iconBtn(Icons.content_copy_outlined, 'Sao chép',
-            _canAct ? () => _copy(u) : null),
-        _iconBtn(Icons.delete_outline, 'Xóa', _canAct ? () => _delete(u) : null,
-            color: colorScheme.error),
+        _iconBtn(
+          Icons.edit_outlined,
+          'Sửa',
+          _canAct ? () => _startEdit(u) : null,
+        ),
+        _iconBtn(
+          Icons.content_copy_outlined,
+          'Sao chép',
+          _canAct ? () => _copy(u) : null,
+        ),
+        _iconBtn(
+          Icons.delete_outline,
+          'Xóa',
+          _canAct ? () => _delete(u) : null,
+          color: colorScheme.error,
+        ),
       ],
     );
   }
@@ -1437,9 +1499,7 @@ class _UsersTableState extends State<UsersTable> {
   Widget _editActions({required VoidCallback onCancel}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [
-        _iconBtn(Icons.close, 'Hủy', _busy ? null : onCancel),
-      ],
+      children: [_iconBtn(Icons.close, 'Hủy', _busy ? null : onCancel)],
     );
   }
 
@@ -1469,11 +1529,12 @@ class _ColumnPickerDialog extends StatefulWidget {
 }
 
 class _ColumnPickerDialogState extends State<_ColumnPickerDialog> {
-  late List<String> _order  = List.of(widget.colOrder);
-  late Set<String>  _hidden = Set.of(widget.hiddenCols);
+  late List<String> _order = List.of(widget.colOrder);
+  late Set<String> _hidden = Set.of(widget.hiddenCols);
 
-  String _label(String key) =>
-      _kCols.firstWhere((c) => c.key == key, orElse: () => _Col(key, key, 0)).label;
+  String _label(String key) => _kCols
+      .firstWhere((c) => c.key == key, orElse: () => _Col(key, key, 0))
+      .label;
 
   @override
   Widget build(BuildContext context) {
@@ -1496,7 +1557,7 @@ class _ColumnPickerDialogState extends State<_ColumnPickerDialog> {
             widget.onApply(_order, _hidden);
           },
           itemBuilder: (ctx, i) {
-            final key    = _order[i];
+            final key = _order[i];
             final hidden = _hidden.contains(key);
             return ListTile(
               key: ValueKey(key),
@@ -1506,22 +1567,30 @@ class _ColumnPickerDialogState extends State<_ColumnPickerDialog> {
                 index: i,
                 child: MouseRegion(
                   cursor: SystemMouseCursors.grab,
-                  child: Icon(Icons.drag_handle,
-                      color: theme.colorScheme.onSurfaceVariant),
+                  child: Icon(
+                    Icons.drag_handle,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               title: Text(
                 _label(key),
                 style: hidden
-                    ? TextStyle(color: theme.colorScheme.onSurfaceVariant,
-                                decoration: TextDecoration.lineThrough)
+                    ? TextStyle(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        decoration: TextDecoration.lineThrough,
+                      )
                     : null,
               ),
               trailing: Switch(
                 value: !hidden,
                 onChanged: (_) {
                   setState(() {
-                    if (hidden) { _hidden.remove(key); } else { _hidden.add(key); }
+                    if (hidden) {
+                      _hidden.remove(key);
+                    } else {
+                      _hidden.add(key);
+                    }
                   });
                   widget.onApply(_order, _hidden);
                 },
@@ -1534,7 +1603,7 @@ class _ColumnPickerDialogState extends State<_ColumnPickerDialog> {
         TextButton(
           onPressed: () {
             setState(() {
-              _order  = _kCols.map((c) => c.key).toList();
+              _order = _kCols.map((c) => c.key).toList();
               _hidden = {};
             });
             widget.onApply(_order, _hidden);
