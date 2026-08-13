@@ -28,8 +28,28 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Validate Supabase secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$SUPABASE_URL" || {
+            echo "::error::Missing SUPABASE_URL"
+            exit 1
+          }
+          test -n "$SUPABASE_ANON_KEY" || {
+            echo "::error::Missing SUPABASE_ANON_KEY"
+            exit 1
+          }
+
       - name: Build web (release)
-        run: flutter build web --release
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          flutter build web --release \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
 
       - name: Deploy preview
         uses: FirebaseExtended/action-hosting-deploy@v0

@@ -41,7 +41,7 @@ class GalleryPage extends StatefulWidget {
 
 class _GalleryPageState extends State<GalleryPage> {
   final _storage = StorageService();
-  final _storageUsageService = StorageUsageService();
+  StorageUsageService? _storageUsageService;
   final _meta = GalleryMetaService();
   final _folderService = GalleryFolderService();
   final _precache = ImagePrecacheService.instance;
@@ -102,6 +102,12 @@ class _GalleryPageState extends State<GalleryPage> {
   @override
   void initState() {
     super.initState();
+    // SUPABASE_* là cấu hình compile-time. Nếu workflow build quên truyền
+    // dart-define, không được chạm vào Supabase.instance vì widget sẽ crash
+    // trước khi kịp render và bản release web chỉ còn một màn hình xám.
+    if (!SupabaseConfig.isConfigured) return;
+
+    _storageUsageService = StorageUsageService();
     _load();
     _metaSub = _meta.watchMetas().listen((snap) {
       if (!mounted) return;
@@ -150,6 +156,9 @@ class _GalleryPageState extends State<GalleryPage> {
 
   /// Dung lượng là thông tin phụ: lỗi RPC không được làm hỏng toàn bộ kho ảnh.
   Future<void> _loadStorageUsage({bool showLoading = true}) async {
+    final service = _storageUsageService;
+    if (service == null) return;
+
     if (showLoading && mounted) {
       setState(() {
         _storageUsageLoading = true;
@@ -157,7 +166,7 @@ class _GalleryPageState extends State<GalleryPage> {
       });
     }
     try {
-      final usage = await _storageUsageService.getUsage(
+      final usage = await service.getUsage(
         quotaBytes: SupabaseConfig.storageQuotaBytes,
       );
       if (!mounted) return;
@@ -911,6 +920,21 @@ class _GalleryPageState extends State<GalleryPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!SupabaseConfig.isConfigured) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Kho ảnh'),
+          leading: IconButton(
+            tooltip: 'Quay lại',
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.go('/admin'),
+          ),
+          actions: const [ThemeToggleButton(), SizedBox(width: 8)],
+        ),
+        body: const _MissingSupabaseConfigView(),
+      );
+    }
+
     final inFolder = _openFolderId != null;
     return Scaffold(
       appBar: _selectionMode ? _selectionAppBar() : _normalAppBar(),
@@ -1435,6 +1459,39 @@ class _GalleryPageState extends State<GalleryPage> {
         initialIndex: start < 0 ? 0 : start,
         colors: Map.of(_colors),
         onDownload: _saveImageToDevice,
+      ),
+    );
+  }
+}
+
+class _MissingSupabaseConfigView extends StatelessWidget {
+  const _MissingSupabaseConfigView();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.warning_amber_outlined, size: 48, color: colors.error),
+            const SizedBox(height: 14),
+            const Text(
+              'Kho ảnh chưa được cấu hình Supabase.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Hãy truyền SUPABASE_URL và SUPABASE_ANON_KEY '
+              'khi build ứng dụng.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colors.onSurfaceVariant, height: 1.5),
+            ),
+          ],
+        ),
       ),
     );
   }
