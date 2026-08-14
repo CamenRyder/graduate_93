@@ -537,7 +537,10 @@ class _PostEditorPageState extends State<PostEditorPage> {
       decoration: BoxDecoration(
         color: highlightBg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colorScheme.outlineVariant),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.55),
+          width: 0.6,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
