@@ -23,11 +23,85 @@ class PostsAdminPage extends StatefulWidget {
 class _PostsAdminPageState extends State<PostsAdminPage> {
   final _service = PostService();
   final _storage = StorageService();
+  final _titleSearchController = TextEditingController();
 
   late final Stream<List<Post>> _stream = _service.watchPosts();
 
+  String _titleQuery = '';
+  DateTimeRange? _timeRange;
+
   /// Id các bài đang có thao tác chạy (đổi trạng thái / xóa) — khóa nút lại.
   final _busyIds = <String>{};
+
+  bool get _hasSearch => _titleQuery.trim().isNotEmpty || _timeRange != null;
+
+  @override
+  void dispose() {
+    _titleSearchController.dispose();
+    super.dispose();
+  }
+
+  DateTime? _postTime(Post post) => post.timeUpdated ?? post.timeCreated;
+
+  List<Post> _applySearch(List<Post> posts) {
+    final query = _titleQuery.trim().toLowerCase();
+    final range = _timeRange;
+    final rangeStart = range == null
+        ? null
+        : DateTime(range.start.year, range.start.month, range.start.day);
+    final rangeEndExclusive = range == null
+        ? null
+        : DateTime(
+            range.end.year,
+            range.end.month,
+            range.end.day,
+          ).add(const Duration(days: 1));
+
+    return posts
+        .where((post) {
+          if (query.isNotEmpty && !post.title.toLowerCase().contains(query)) {
+            return false;
+          }
+          if (rangeStart != null && rangeEndExclusive != null) {
+            final postTime = _postTime(post);
+            if (postTime == null ||
+                postTime.isBefore(rangeStart) ||
+                !postTime.isBefore(rangeEndExclusive)) {
+              return false;
+            }
+          }
+          return true;
+        })
+        .toList(growable: false);
+  }
+
+  Future<void> _selectTimeRange() async {
+    final now = DateTime.now();
+    final selected = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 10, 12, 31),
+      initialDateRange: _timeRange,
+      helpText: 'Chọn khoảng thời gian đăng bài',
+      cancelText: 'Hủy',
+      confirmText: 'Áp dụng',
+      saveText: 'Áp dụng',
+      fieldStartHintText: 'Từ ngày',
+      fieldEndHintText: 'Đến ngày',
+      fieldStartLabelText: 'Từ ngày',
+      fieldEndLabelText: 'Đến ngày',
+    );
+    if (selected == null || !mounted) return;
+    setState(() => _timeRange = selected);
+  }
+
+  void _clearSearch() {
+    setState(() {
+      _titleSearchController.clear();
+      _titleQuery = '';
+      _timeRange = null;
+    });
+  }
 
   void _showToast(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context)
@@ -96,6 +170,92 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
         '${two(dt.hour)}:${two(dt.minute)}';
   }
 
+  String _formatDate(DateTime dt) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(dt.day)}/${two(dt.month)}/${dt.year}';
+  }
+
+  Widget _searchPanel({required int total, required int shown}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final range = _timeRange;
+    final rangeLabel = range == null
+        ? 'Chọn khoảng thời gian'
+        : '${_formatDate(range.start)} – ${_formatDate(range.end)}';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Tìm kiếm bài viết',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _titleSearchController,
+            onChanged: (value) => setState(() => _titleQuery = value),
+            decoration: InputDecoration(
+              labelText: 'Tiêu đề bài viết',
+              hintText: 'Nhập tiêu đề cần tìm',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _titleQuery.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Xóa tiêu đề tìm kiếm',
+                      onPressed: () {
+                        _titleSearchController.clear();
+                        setState(() => _titleQuery = '');
+                      },
+                      icon: const Icon(Icons.close),
+                    ),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _selectTimeRange,
+                icon: const Icon(Icons.date_range_outlined),
+                label: Text(rangeLabel),
+              ),
+              if (range != null)
+                IconButton.outlined(
+                  tooltip: 'Xóa khoảng thời gian',
+                  onPressed: () => setState(() => _timeRange = null),
+                  icon: const Icon(Icons.close),
+                ),
+              if (_hasSearch)
+                TextButton.icon(
+                  onPressed: _clearSearch,
+                  icon: const Icon(Icons.filter_alt_off_outlined),
+                  label: const Text('Xóa tìm kiếm'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _hasSearch ? 'Tìm thấy $shown/$total bài viết' : '$total bài viết',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -139,20 +299,39 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final posts = snapshot.data!;
-          if (posts.isEmpty) {
+          final allPosts = snapshot.data!;
+          if (allPosts.isEmpty) {
             return const Center(
               child: Text('Chưa có bài viết — bấm "Viết bài" để tạo'),
             );
           }
+          final posts = _applySearch(allPosts);
           // Cột nội dung hẹp (~720px) như 1 trang blog, hợp cả điện thoại.
           return Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 720),
               child: ListView.builder(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                itemCount: posts.length,
-                itemBuilder: (context, i) => _postCard(posts[i]),
+                itemCount: posts.isEmpty ? 2 : posts.length + 2,
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return _searchPanel(
+                      total: allPosts.length,
+                      shown: posts.length,
+                    );
+                  }
+                  if (index == 1) {
+                    return posts.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 40),
+                            child: Center(
+                              child: Text('Không tìm thấy bài viết phù hợp.'),
+                            ),
+                          )
+                        : const SizedBox(height: 14);
+                  }
+                  return _postCard(posts[index - 2]);
+                },
               ),
             ),
           );

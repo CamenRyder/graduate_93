@@ -486,6 +486,12 @@ class _PostEditorPageState extends State<PostEditorPage> {
               decoration: const InputDecoration(
                 hintText: 'Tiêu đề bài viết…',
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
+                hoverColor: Colors.transparent,
               ),
             ),
             const SizedBox(height: 8),
@@ -579,6 +585,12 @@ class _PostEditorPageState extends State<PostEditorPage> {
                 isDense: true,
                 hintText: postBlockHint(d.type),
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                focusedErrorBorder: InputBorder.none,
+                hoverColor: Colors.transparent,
               ),
             )
           else

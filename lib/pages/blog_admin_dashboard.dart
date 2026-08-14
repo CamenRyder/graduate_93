@@ -681,28 +681,24 @@ class _Shortcuts extends StatelessWidget {
           _ShortcutTile(
             icon: Icons.add_circle_outline,
             title: 'Viết bài mới',
-            subtitle: 'Mở trình soạn thảo',
             onTap: () => context.push('/admin/posts/edit'),
           ),
           const SizedBox(height: 10),
           _ShortcutTile(
-            icon: Icons.article_outlined,
-            title: 'Quản lý bài viết',
-            subtitle: 'Bản nháp và bài đã đăng',
+            icon: Icons.search,
+            title: 'Tìm kiếm bài viết',
             onTap: () => context.go('/admin/posts'),
           ),
           const SizedBox(height: 10),
           _ShortcutTile(
             icon: Icons.photo_library_outlined,
             title: 'Kho ảnh',
-            subtitle: 'Quản lý tài nguyên hình ảnh',
             onTap: () => context.go('/gallery'),
           ),
           const SizedBox(height: 10),
           _ShortcutTile(
             icon: Icons.public_outlined,
             title: 'Xem blog',
-            subtitle: 'Mở trang dành cho người đọc',
             onTap: () => context.go('/'),
           ),
         ],
@@ -715,13 +711,11 @@ class _ShortcutTile extends StatelessWidget {
   const _ShortcutTile({
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.onTap,
   });
 
   final IconData icon;
   final String title;
-  final String subtitle;
   final VoidCallback onTap;
 
   @override
@@ -741,7 +735,6 @@ class _ShortcutTile extends StatelessWidget {
           child: Icon(icon, size: 20, color: colors.onSecondaryContainer),
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
         trailing: const Icon(Icons.chevron_right),
       ),
     );
