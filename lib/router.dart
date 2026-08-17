@@ -24,7 +24,7 @@ import 'pages/welcome_page.dart';
 /// Công khai (không cần đăng nhập):
 ///  - `/`          : danh sách bài viết đã đăng
 ///  - `/posts`     : alias danh sách bài viết đã đăng
-///  - `/posts/:id` : đọc chi tiết 1 bài viết đã đăng
+///  - `/posts/:id/:slug` : đọc chi tiết 1 bài viết đã đăng
 ///  - `/auth`      : xác thực khách mời (nhập code + số điện thoại)
 ///  - `/countdown` : trang đếm ngược đến sự kiện
 ///  - `/login`     : đăng nhập admin
@@ -119,6 +119,11 @@ final router = GoRouter(
     ),
     GoRoute(
       path: '/posts/:id',
+      builder: (context, state) =>
+          PostDetailPage(postId: state.pathParameters['id'] ?? ''),
+    ),
+    GoRoute(
+      path: '/posts/:id/:slug',
       builder: (context, state) =>
           PostDetailPage(postId: state.pathParameters['id'] ?? ''),
     ),

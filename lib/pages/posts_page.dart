@@ -3,13 +3,14 @@ import 'package:go_router/go_router.dart';
 
 import '../models/post.dart';
 import '../services/post_service.dart';
+import '../utils/post_slug.dart';
 import '../widgets/theme_toggle_button.dart';
 
 /// Trang danh sách dành cho người đọc, chỉ hiển thị bài đã đăng.
 ///
 /// Bản nháp chỉ xuất hiện ở màn quản lý `/admin/posts`, kể cả khi trình duyệt
 /// hiện vẫn còn phiên đăng nhập admin.
-/// Chạm vào thẻ để mở bài chi tiết (`/posts/:id`).
+/// Chạm vào thẻ để mở bài chi tiết (`/posts/:id/:slug`).
 class PostsPage extends StatefulWidget {
   const PostsPage({super.key, this.showBackButton = false});
 
@@ -103,7 +104,8 @@ class _PostsPageState extends State<PostsPage> {
       margin: const EdgeInsets.only(bottom: 14),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => context.push('/posts/${post.id}'),
+        onTap: () =>
+            context.push(postDetailPath(id: post.id, title: post.title)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

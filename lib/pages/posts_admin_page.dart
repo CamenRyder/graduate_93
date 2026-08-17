@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../models/post.dart';
 import '../services/post_service.dart';
 import '../services/storage_service.dart';
+import '../utils/post_slug.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
 
@@ -350,7 +351,10 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         // Chạm vào thẻ -> xem thử bài như trang đọc.
-        onTap: busy ? null : () => context.push('/posts/${post.id}'),
+        onTap: busy
+            ? null
+            : () =>
+                  context.push(postDetailPath(id: post.id, title: post.title)),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
           child: Row(
