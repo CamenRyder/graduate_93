@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../models/post.dart';
+import '../models/post_category.dart';
+import '../services/category_service.dart';
 import '../services/post_image_upload_middleware.dart';
 import '../services/post_service.dart';
 import '../services/storage_service.dart';
@@ -60,17 +62,21 @@ class _BlockDraft {
 
 class _PostEditorPageState extends State<PostEditorPage> {
   final _service = PostService();
+  final _categoryService = CategoryService();
   final _storage = StorageService();
   final _imageUpload = PostImageUploadMiddleware();
 
   final _titleCtrl = TextEditingController();
   final _blocks = <_BlockDraft>[];
+  late final Stream<List<PostCategory>> _categoriesStream = _categoryService
+      .watchCategories();
 
   /// Controller của các khối đã gỡ — chỉ dispose khi trang đóng (dispose ngay
   /// lúc gỡ thì TextField còn sống trong frame hiện tại sẽ lỗi).
   final _removedCtrls = <TextEditingController>[];
 
   bool _published = false;
+  String _categoryId = '';
   bool _loading = false;
   String? _loadError;
   bool _saving = false;
@@ -133,6 +139,7 @@ class _PostEditorPageState extends State<PostEditorPage> {
         );
       setState(() {
         _published = post.published;
+        _categoryId = post.categoryId;
         _loading = false;
       });
     } catch (e) {
@@ -386,6 +393,7 @@ class _PostEditorPageState extends State<PostEditorPage> {
         id: widget.postId ?? '',
         title: title,
         published: _published,
+        categoryId: _categoryId,
         blocks: blocks,
         timeCreated: null,
         timeUpdated: null,
@@ -495,6 +503,8 @@ class _PostEditorPageState extends State<PostEditorPage> {
               ),
             ),
             const SizedBox(height: 8),
+            _categoryField(),
+            const SizedBox(height: 16),
             for (var i = 0; i < _blocks.length; i++) _blockCard(i),
             const SizedBox(height: 8),
             if (_uploading)
@@ -523,6 +533,79 @@ class _PostEditorPageState extends State<PostEditorPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _categoryField() {
+    return StreamBuilder<List<PostCategory>>(
+      stream: _categoriesStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.error_outline),
+            title: const Text('Không tải được danh mục'),
+            subtitle: Text('${snapshot.error}'),
+            trailing: TextButton(
+              onPressed: () => context.push('/admin/categories'),
+              child: const Text('Quản lý'),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const LinearProgressIndicator(minHeight: 2);
+        }
+
+        final categories = snapshot.data!;
+        final categoryExists =
+            _categoryId.isEmpty ||
+            categories.any((category) => category.id == _categoryId);
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                key: ValueKey(_categoryId),
+                initialValue: _categoryId,
+                decoration: const InputDecoration(
+                  labelText: 'Danh mục',
+                  prefixIcon: Icon(Icons.folder_outlined),
+                  helperText: 'Mỗi bài viết có một danh mục chính',
+                ),
+                items: [
+                  const DropdownMenuItem(
+                    value: '',
+                    child: Text('Chưa phân loại'),
+                  ),
+                  if (!categoryExists)
+                    DropdownMenuItem(
+                      value: _categoryId,
+                      child: Text('Danh mục đã bị xóa ($_categoryId)'),
+                    ),
+                  for (final category in categories)
+                    DropdownMenuItem(
+                      value: category.id,
+                      child: Text(
+                        category.visible
+                            ? category.name
+                            : '${category.name} (đang ẩn)',
+                      ),
+                    ),
+                ],
+                onChanged: _saving
+                    ? null
+                    : (value) => setState(() => _categoryId = value ?? ''),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.outlined(
+              tooltip: 'Quản lý danh mục',
+              onPressed: () => context.push('/admin/categories'),
+              icon: const Icon(Icons.settings_outlined),
+            ),
+          ],
+        );
+      },
     );
   }
 

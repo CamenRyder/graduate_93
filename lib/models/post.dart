@@ -102,6 +102,7 @@ class Post {
     required this.blocks,
     required this.timeCreated,
     required this.timeUpdated,
+    this.categoryId = '',
   });
 
   /// ID của document (Firestore tự sinh).
@@ -112,6 +113,9 @@ class Post {
 
   /// `true` = đã đăng (khách xem được); `false` = bản nháp (chỉ admin thấy).
   final bool published;
+
+  /// ID/slug của danh mục chính. Rỗng = bài cũ hoặc chưa phân loại.
+  final String categoryId;
 
   /// Danh sách khối nội dung theo đúng thứ tự hiển thị.
   final List<PostBlock> blocks;
@@ -127,6 +131,7 @@ class Post {
       id: doc.id,
       title: data['title']?.toString() ?? '',
       published: data['published'] as bool? ?? false,
+      categoryId: data['category_id']?.toString() ?? '',
       blocks: [
         for (final b in rawBlocks)
           if (b is Map) PostBlock.fromMap(Map<String, dynamic>.from(b)),
@@ -142,6 +147,9 @@ class Post {
     return {
       'title': title,
       'published': published,
+      // Luôn ghi field này để thao tác "Chưa phân loại" có thể xóa liên kết
+      // category cũ khi update document.
+      'category_id': categoryId,
       'blocks': [for (final b in blocks) b.toMap()],
     };
   }

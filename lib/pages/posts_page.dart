@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../models/post.dart';
+import '../models/post_category.dart';
+import '../services/category_service.dart';
 import '../services/post_service.dart';
 import '../utils/post_slug.dart';
 import '../widgets/theme_toggle_button.dart';
@@ -12,11 +14,14 @@ import '../widgets/theme_toggle_button.dart';
 /// hiện vẫn còn phiên đăng nhập admin.
 /// Chạm vào thẻ để mở bài chi tiết (`/posts/:id/:slug`).
 class PostsPage extends StatefulWidget {
-  const PostsPage({super.key, this.showBackButton = false});
+  const PostsPage({super.key, this.showBackButton = false, this.categorySlug});
 
   /// Route `/` là trang chủ nên không có nút quay lại. Route `/posts` có nút
   /// quay lại vì có thể được mở từ các màn khác.
   final bool showBackButton;
+
+  /// Có giá trị khi mở `/categories/:slug`; null = hiển thị tất cả.
+  final String? categorySlug;
 
   @override
   State<PostsPage> createState() => _PostsPageState();
@@ -24,6 +29,8 @@ class PostsPage extends StatefulWidget {
 
 class _PostsPageState extends State<PostsPage> {
   late final Stream<List<Post>> _stream = PostService().watchPosts();
+  late final Stream<List<PostCategory>> _categoriesStream = CategoryService()
+      .watchCategories();
 
   void _goBack() {
     if (context.canPop()) {
@@ -54,48 +61,155 @@ class _PostsPageState extends State<PostsPage> {
             : null,
         actions: const [ThemeToggleButton(), SizedBox(width: 8)],
       ),
-      body: StreamBuilder<List<Post>>(
-        stream: _stream,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
+      body: StreamBuilder<List<PostCategory>>(
+        stream: _categoriesStream,
+        builder: (context, categorySnapshot) {
+          if (categorySnapshot.hasError) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Không tải được bài viết:\n${snapshot.error}',
+                  'Không tải được danh mục:\n${categorySnapshot.error}',
                   textAlign: TextAlign.center,
                 ),
               ),
             );
           }
-          if (!snapshot.hasData) {
+          if (!categorySnapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // Đây luôn là màn hình của người đọc: tuyệt đối không hiện bản nháp,
-          // kể cả trình duyệt đang giữ phiên đăng nhập admin.
-          final posts = snapshot.data!.where((p) => p.published).toList();
-          if (posts.isEmpty) {
-            return const Center(child: Text('Chưa có bài viết nào.'));
+          final categories = categorySnapshot.data!
+              .where((category) => category.visible)
+              .toList(growable: false);
+          PostCategory? selectedCategory;
+          for (final category in categories) {
+            if (category.slug == widget.categorySlug) {
+              selectedCategory = category;
+              break;
+            }
+          }
+          if (widget.categorySlug != null && selectedCategory == null) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Danh mục không tồn tại hoặc đang được ẩn.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
           }
 
-          // Cột nội dung hẹp (~720px) như trang blog, hợp cả điện thoại.
-          return Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720),
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-                itemCount: posts.length,
-                itemBuilder: (context, i) => _postCard(posts[i]),
-              ),
-            ),
+          return StreamBuilder<List<Post>>(
+            stream: _stream,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Không tải được bài viết:\n${snapshot.error}',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                );
+              }
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              // Trang công khai tuyệt đối không hiện bản nháp, kể cả khi
+              // trình duyệt đang giữ phiên đăng nhập admin.
+              final posts = snapshot.data!
+                  .where(
+                    (post) =>
+                        post.published &&
+                        (selectedCategory == null ||
+                            post.categoryId == selectedCategory.id),
+                  )
+                  .toList(growable: false);
+              final categoryById = {
+                for (final category in categories) category.id: category,
+              };
+
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Column(
+                    children: [
+                      _categoryBar(categories, selectedCategory),
+                      if (selectedCategory?.description.isNotEmpty ?? false)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(selectedCategory!.description),
+                          ),
+                        ),
+                      Expanded(
+                        child: posts.isEmpty
+                            ? Center(
+                                child: Text(
+                                  selectedCategory == null
+                                      ? 'Chưa có bài viết nào.'
+                                      : 'Danh mục này chưa có bài viết.',
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  2,
+                                  16,
+                                  32,
+                                ),
+                                itemCount: posts.length,
+                                itemBuilder: (context, index) => _postCard(
+                                  posts[index],
+                                  categoryById[posts[index].categoryId],
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           );
         },
       ),
     );
   }
 
-  Widget _postCard(Post post) {
+  Widget _categoryBar(
+    List<PostCategory> categories,
+    PostCategory? selectedCategory,
+  ) {
+    if (categories.isEmpty) return const SizedBox(height: 12);
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      child: Row(
+        children: [
+          ChoiceChip(
+            label: const Text('Tất cả'),
+            selected: selectedCategory == null,
+            onSelected: (_) => context.go('/'),
+          ),
+          for (final category in categories) ...[
+            const SizedBox(width: 8),
+            ChoiceChip(
+              label: Text(category.name),
+              selected: selectedCategory?.id == category.id,
+              onSelected: (_) => context.go('/categories/${category.slug}'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _postCard(Post post, PostCategory? category) {
     final colorScheme = Theme.of(context).colorScheme;
     final cover = post.coverUrl;
     final snippet = post.snippet;
@@ -146,6 +260,16 @@ class _PostsPageState extends State<PostsPage> {
                       color: colorScheme.onSurfaceVariant,
                     ),
                   ),
+                  if (category != null) ...[
+                    const SizedBox(height: 7),
+                    ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      avatar: const Icon(Icons.folder_outlined, size: 16),
+                      label: Text(category.name),
+                      onPressed: () =>
+                          context.go('/categories/${category.slug}'),
+                    ),
+                  ],
                   if (snippet.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text(

@@ -5,6 +5,7 @@ import 'controllers/auth_controller.dart';
 import 'controllers/guest_controller.dart';
 import 'pages/admin_page.dart';
 import 'pages/auth_page.dart';
+import 'pages/categories_admin_page.dart';
 import 'pages/countdown_page.dart';
 import 'pages/gallery_page.dart';
 import 'pages/guide_page.dart';
@@ -25,6 +26,7 @@ import 'pages/welcome_page.dart';
 ///  - `/`          : danh sách bài viết đã đăng
 ///  - `/posts`     : alias danh sách bài viết đã đăng
 ///  - `/posts/:id/:slug` : đọc chi tiết 1 bài viết đã đăng
+///  - `/categories/:slug` : danh sách bài viết theo danh mục
 ///  - `/auth`      : xác thực khách mời (nhập code + số điện thoại)
 ///  - `/countdown` : trang đếm ngược đến sự kiện
 ///  - `/login`     : đăng nhập admin
@@ -38,6 +40,7 @@ import 'pages/welcome_page.dart';
 ///  - `/admin/posts`          : quản lý bài viết
 ///  - `/admin/posts/edit`     : viết bài mới
 ///  - `/admin/posts/edit/:id` : sửa bài đã có
+///  - `/admin/categories`     : quản lý danh mục bài viết
 final router = GoRouter(
   initialLocation: '/',
   refreshListenable: Listenable.merge([authController, guestController]),
@@ -114,6 +117,10 @@ final router = GoRouter(
           PostEditorPage(postId: state.pathParameters['id']),
     ),
     GoRoute(
+      path: '/admin/categories',
+      builder: (context, state) => const CategoriesAdminPage(),
+    ),
+    GoRoute(
       path: '/posts',
       builder: (context, state) => const PostsPage(showBackButton: true),
     ),
@@ -126,6 +133,13 @@ final router = GoRouter(
       path: '/posts/:id/:slug',
       builder: (context, state) =>
           PostDetailPage(postId: state.pathParameters['id'] ?? ''),
+    ),
+    GoRoute(
+      path: '/categories/:slug',
+      builder: (context, state) => PostsPage(
+        categorySlug: state.pathParameters['slug'],
+        showBackButton: true,
+      ),
     ),
     GoRoute(path: '/gallery', builder: (context, state) => const GalleryPage()),
     GoRoute(path: '/love', builder: (context, state) => const LovePage()),

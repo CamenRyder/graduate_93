@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../models/post.dart';
+import '../models/post_category.dart';
+import '../services/category_service.dart';
 import '../services/post_service.dart';
 import '../services/storage_service.dart';
 import '../utils/post_slug.dart';
@@ -23,18 +25,25 @@ class PostsAdminPage extends StatefulWidget {
 
 class _PostsAdminPageState extends State<PostsAdminPage> {
   final _service = PostService();
+  final _categoryService = CategoryService();
   final _storage = StorageService();
   final _titleSearchController = TextEditingController();
 
   late final Stream<List<Post>> _stream = _service.watchPosts();
+  late final Stream<List<PostCategory>> _categoriesStream = _categoryService
+      .watchCategories();
 
   String _titleQuery = '';
   DateTimeRange? _timeRange;
+  String? _categoryFilter;
 
   /// Id các bài đang có thao tác chạy (đổi trạng thái / xóa) — khóa nút lại.
   final _busyIds = <String>{};
 
-  bool get _hasSearch => _titleQuery.trim().isNotEmpty || _timeRange != null;
+  bool get _hasSearch =>
+      _titleQuery.trim().isNotEmpty ||
+      _timeRange != null ||
+      _categoryFilter != null;
 
   @override
   void dispose() {
@@ -61,6 +70,9 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
     return posts
         .where((post) {
           if (query.isNotEmpty && !post.title.toLowerCase().contains(query)) {
+            return false;
+          }
+          if (_categoryFilter != null && post.categoryId != _categoryFilter) {
             return false;
           }
           if (rangeStart != null && rangeEndExclusive != null) {
@@ -101,6 +113,7 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
       _titleSearchController.clear();
       _titleQuery = '';
       _timeRange = null;
+      _categoryFilter = null;
     });
   }
 
@@ -176,7 +189,11 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
     return '${two(dt.day)}/${two(dt.month)}/${dt.year}';
   }
 
-  Widget _searchPanel({required int total, required int shown}) {
+  Widget _searchPanel({
+    required int total,
+    required int shown,
+    required List<PostCategory> categories,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
     final range = _timeRange;
     final rangeLabel = range == null
@@ -237,6 +254,35 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
                   onPressed: () => setState(() => _timeRange = null),
                   icon: const Icon(Icons.close),
                 ),
+              SizedBox(
+                width: 230,
+                child: DropdownButtonFormField<String?>(
+                  key: ValueKey(_categoryFilter),
+                  initialValue: _categoryFilter,
+                  hint: const Text('Tất cả danh mục'),
+                  decoration: const InputDecoration(
+                    labelText: 'Danh mục',
+                    prefixIcon: Icon(Icons.folder_outlined),
+                    isDense: true,
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Tất cả danh mục'),
+                    ),
+                    const DropdownMenuItem<String?>(
+                      value: '',
+                      child: Text('Chưa phân loại'),
+                    ),
+                    for (final category in categories)
+                      DropdownMenuItem<String?>(
+                        value: category.id,
+                        child: Text(category.name),
+                      ),
+                  ],
+                  onChanged: (value) => setState(() => _categoryFilter = value),
+                ),
+              ),
               if (_hasSearch)
                 TextButton.icon(
                   onPressed: _clearSearch,
@@ -269,6 +315,11 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
         ),
         actions: [
           IconButton(
+            tooltip: 'Quản lý danh mục',
+            icon: const Icon(Icons.folder_outlined),
+            onPressed: () => context.push('/admin/categories'),
+          ),
+          IconButton(
             tooltip: 'Xem trang bài viết (như khách nhìn thấy)',
             icon: const Icon(Icons.menu_book_outlined),
             // push để bấm back từ trang đọc quay lại đây.
@@ -283,65 +334,92 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
         icon: const Icon(Icons.edit_outlined),
         label: const Text('Viết bài'),
       ),
-      body: StreamBuilder<List<Post>>(
-        stream: _stream,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
+      body: StreamBuilder<List<PostCategory>>(
+        stream: _categoriesStream,
+        builder: (context, categorySnapshot) {
+          if (categorySnapshot.hasError) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Lỗi khi đọc bài viết:\n${snapshot.error}',
+                  'Lỗi khi đọc danh mục:\n${categorySnapshot.error}',
                   textAlign: TextAlign.center,
                 ),
               ),
             );
           }
-          if (!snapshot.hasData) {
+          if (!categorySnapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final allPosts = snapshot.data!;
-          if (allPosts.isEmpty) {
-            return const Center(
-              child: Text('Chưa có bài viết — bấm "Viết bài" để tạo'),
-            );
-          }
-          final posts = _applySearch(allPosts);
-          // Cột nội dung hẹp (~720px) như 1 trang blog, hợp cả điện thoại.
-          return Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720),
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                itemCount: posts.isEmpty ? 2 : posts.length + 2,
-                itemBuilder: (context, index) {
-                  if (index == 0) {
-                    return _searchPanel(
-                      total: allPosts.length,
-                      shown: posts.length,
-                    );
-                  }
-                  if (index == 1) {
-                    return posts.isEmpty
-                        ? const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 40),
-                            child: Center(
-                              child: Text('Không tìm thấy bài viết phù hợp.'),
-                            ),
-                          )
-                        : const SizedBox(height: 14);
-                  }
-                  return _postCard(posts[index - 2]);
-                },
-              ),
-            ),
+          final categories = categorySnapshot.data!;
+          final categoryById = {
+            for (final category in categories) category.id: category,
+          };
+
+          return StreamBuilder<List<Post>>(
+            stream: _stream,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Lỗi khi đọc bài viết:\n${snapshot.error}',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                );
+              }
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final allPosts = snapshot.data!;
+              if (allPosts.isEmpty) {
+                return const Center(
+                  child: Text('Chưa có bài viết — bấm "Viết bài" để tạo'),
+                );
+              }
+              final posts = _applySearch(allPosts);
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+                    itemCount: posts.isEmpty ? 2 : posts.length + 2,
+                    itemBuilder: (context, index) {
+                      if (index == 0) {
+                        return _searchPanel(
+                          total: allPosts.length,
+                          shown: posts.length,
+                          categories: categories,
+                        );
+                      }
+                      if (index == 1) {
+                        return posts.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 40),
+                                child: Center(
+                                  child: Text(
+                                    'Không tìm thấy bài viết phù hợp.',
+                                  ),
+                                ),
+                              )
+                            : const SizedBox(height: 14);
+                      }
+                      final post = posts[index - 2];
+                      return _postCard(post, categoryById[post.categoryId]);
+                    },
+                  ),
+                ),
+              );
+            },
           );
         },
       ),
     );
   }
 
-  Widget _postCard(Post post) {
+  Widget _postCard(Post post, PostCategory? category) {
     final colorScheme = Theme.of(context).colorScheme;
     final busy = _busyIds.contains(post.id);
     final title = post.title.trim().isEmpty ? '(Chưa có tiêu đề)' : post.title;
@@ -382,6 +460,28 @@ class _PostsAdminPageState extends State<PostsAdminPage> {
                             ? colorScheme.onSurfaceVariant
                             : colorScheme.tertiary,
                       ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.folder_outlined,
+                          size: 15,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            category?.name ?? 'Chưa phân loại',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

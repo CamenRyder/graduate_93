@@ -691,6 +691,12 @@ class _Shortcuts extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           _ShortcutTile(
+            icon: Icons.folder_outlined,
+            title: 'Danh mục bài viết',
+            onTap: () => context.go('/admin/categories'),
+          ),
+          const SizedBox(height: 10),
+          _ShortcutTile(
             icon: Icons.photo_library_outlined,
             title: 'Kho ảnh',
             onTap: () => context.go('/gallery'),

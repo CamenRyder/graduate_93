@@ -63,6 +63,15 @@ class PostService {
     });
   }
 
+  /// Kiểm tra category còn được bài viết nào sử dụng trước khi cho phép xóa.
+  Future<bool> hasPostsInCategory(String categoryId) async {
+    final snapshot = await _col
+        .where('category_id', isEqualTo: categoryId)
+        .limit(1)
+        .get();
+    return snapshot.docs.isNotEmpty;
+  }
+
   /// Xóa bài viết. Ảnh trong bài (Supabase Storage) xóa riêng qua
   /// StorageService.deletePostImages — xem nơi gọi.
   Future<void> deletePost(String id) => _col.doc(id).delete();

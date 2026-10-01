@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../controllers/auth_controller.dart';
 import '../models/post.dart';
+import '../models/post_category.dart';
+import '../services/category_service.dart';
 import '../services/post_service.dart';
 import '../theme/post_styles.dart';
 import '../theme/row_palette.dart';
@@ -28,6 +30,8 @@ class PostDetailPage extends StatefulWidget {
 
 class _PostDetailPageState extends State<PostDetailPage> {
   late final Stream<Post?> _stream = PostService().watchPost(widget.postId);
+  late final Stream<List<PostCategory>> _categoriesStream = CategoryService()
+      .watchCategories();
 
   void _goBack() {
     if (context.canPop()) {
@@ -145,11 +149,42 @@ class _PostDetailPageState extends State<PostDetailPage> {
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
+            if (post.categoryId.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _categoryChip(post.categoryId),
+            ],
             const SizedBox(height: 16),
             for (final block in post.blocks) _blockView(block),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _categoryChip(String categoryId) {
+    return StreamBuilder<List<PostCategory>>(
+      stream: _categoriesStream,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+        PostCategory? category;
+        for (final item in snapshot.data!) {
+          if (item.id == categoryId) {
+            category = item;
+            break;
+          }
+        }
+        if (category == null || !category.visible) {
+          return const SizedBox.shrink();
+        }
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: ActionChip(
+            avatar: const Icon(Icons.folder_outlined, size: 16),
+            label: Text(category.name),
+            onPressed: () => context.go('/categories/${category!.slug}'),
+          ),
+        );
+      },
     );
   }
 
