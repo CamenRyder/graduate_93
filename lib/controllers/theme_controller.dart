@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Quản lý chế độ giao diện (Sáng / Tối) và lưu lựa chọn.
-/// Mặc định là chế độ tối khi người dùng chưa từng chọn.
+/// Mặc định theo hệ thống khi người dùng chưa từng chọn.
 class ThemeController extends ChangeNotifier {
   static const String _prefsKey = 'theme_mode';
 
-  ThemeMode _themeMode = ThemeMode.dark;
+  ThemeMode _themeMode = ThemeMode.system;
   ThemeMode get themeMode => _themeMode;
 
   Future<void> load() async {
@@ -14,7 +14,8 @@ class ThemeController extends ChangeNotifier {
     final saved = prefs.getString(_prefsKey);
     _themeMode = switch (saved) {
       'light' => ThemeMode.light,
-      _ => ThemeMode.dark,
+      'dark' => ThemeMode.dark,
+      _ => ThemeMode.system,
     };
     notifyListeners();
   }

@@ -14,6 +14,9 @@ enum PostBlockType {
   /// Trích dẫn (viền trái + in nghiêng).
   quote,
 
+  /// Đoạn mã nguồn (font mono, cuộn ngang khi dài).
+  code,
+
   /// Ảnh (file nằm ở Supabase Storage, Firestore chỉ lưu link + đường dẫn).
   image;
 
@@ -23,6 +26,7 @@ enum PostBlockType {
     PostBlockType.subheading => 'Đề mục phụ',
     PostBlockType.paragraph => 'Đoạn văn',
     PostBlockType.quote => 'Trích dẫn',
+    PostBlockType.code => 'Mã nguồn',
     PostBlockType.image => 'Ảnh',
   };
 
@@ -35,6 +39,7 @@ enum PostBlockType {
     subheading,
     paragraph,
     quote,
+    code,
   ];
 
   /// Đọc lại loại khối từ chuỗi lưu trên Firestore; loại lạ/thiếu thì coi
@@ -166,8 +171,23 @@ class Post {
   /// Ghép các đoạn văn bản thành phần giới thiệu cho thẻ danh sách. UI giới hạn
   /// còn 3 dòng nên người đọc thấy được vài câu đầu mà không lộ toàn bộ bài.
   String get snippet {
+    final prose = blocks
+        .where(
+          (b) =>
+              (b.type == PostBlockType.paragraph ||
+                  b.type == PostBlockType.quote) &&
+              b.text.trim().isNotEmpty,
+        )
+        .map((b) => b.text.trim())
+        .join(' ');
+    if (prose.isNotEmpty) return prose;
     return blocks
-        .where((b) => b.type.isText && b.text.trim().isNotEmpty)
+        .where(
+          (b) =>
+              b.type != PostBlockType.code &&
+              b.type.isText &&
+              b.text.trim().isNotEmpty,
+        )
         .map((b) => b.text.trim())
         .join(' ');
   }

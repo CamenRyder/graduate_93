@@ -1,12 +1,12 @@
 {
-    "name": "Simon_blog",
-    "short_name": "Simon_blog",
+    "name": "Minh Hiếu — Notes",
+    "short_name": "Hiếu Notes",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#111214",
+    "theme_color": "#3157D5",
+    "description": "Ghi chép về công nghệ, sản phẩm và quá trình xây dựng.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

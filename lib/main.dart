@@ -27,9 +27,7 @@ Future<void> main() async {
   // URL "sạch": /admin thay vì /#/admin
   usePathUrlStrategy();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Supabase: dùng cho kho ảnh (gallery). Chỉ khởi tạo khi đã điền cấu hình
   // để app không crash lúc chưa cắm URL/khóa.
@@ -67,20 +65,12 @@ class MyApp extends StatelessWidget {
       listenable: themeController,
       builder: (context, _) {
         return MaterialApp.router(
-          title: 'Admin · Web Gra',
+          title: 'Minh Hiếu — Notes',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),
           themeMode: themeController.themeMode,
           routerConfig: router,
-          // Giảm cỡ chữ toàn hệ thống xuống 80% (nhỏ hơn 20%).
-          builder: (context, child) {
-            final mq = MediaQuery.of(context);
-            return MediaQuery(
-              data: mq.copyWith(textScaler: const TextScaler.linear(0.8)),
-              child: child ?? const SizedBox.shrink(),
-            );
-          },
         );
       },
     );

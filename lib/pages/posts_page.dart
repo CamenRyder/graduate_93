@@ -5,22 +5,16 @@ import '../models/post.dart';
 import '../models/post_category.dart';
 import '../services/category_service.dart';
 import '../services/post_service.dart';
+import '../theme.dart';
 import '../utils/post_slug.dart';
-import '../widgets/theme_toggle_button.dart';
+import '../widgets/publication_chrome.dart';
 
-/// Trang danh sách dành cho người đọc, chỉ hiển thị bài đã đăng.
-///
-/// Bản nháp chỉ xuất hiện ở màn quản lý `/admin/posts`, kể cả khi trình duyệt
-/// hiện vẫn còn phiên đăng nhập admin.
-/// Chạm vào thẻ để mở bài chi tiết (`/posts/:id/:slug`).
+/// Kho bài viết công khai, trình bày như mục lục của một ấn phẩm thay vì lưới
+/// thẻ. Bản nháp luôn bị loại khỏi luồng công khai.
 class PostsPage extends StatefulWidget {
   const PostsPage({super.key, this.showBackButton = false, this.categorySlug});
 
-  /// Route `/` là trang chủ nên không có nút quay lại. Route `/posts` có nút
-  /// quay lại vì có thể được mở từ các màn khác.
   final bool showBackButton;
-
-  /// Có giá trị khi mở `/categories/:slug`; null = hiển thị tất cả.
   final String? categorySlug;
 
   @override
@@ -28,262 +22,68 @@ class PostsPage extends StatefulWidget {
 }
 
 class _PostsPageState extends State<PostsPage> {
-  late final Stream<List<Post>> _stream = PostService().watchPosts();
-  late final Stream<List<PostCategory>> _categoriesStream = CategoryService()
+  late final Stream<List<Post>> _posts = PostService().watchPosts();
+  late final Stream<List<PostCategory>> _categories = CategoryService()
       .watchCategories();
-
-  void _goBack() {
-    if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go('/');
-    }
-  }
-
-  String _formatDate(DateTime? dt) {
-    if (dt == null) return '';
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(dt.day)}/${two(dt.month)}/${dt.year}';
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Bài viết'),
-        automaticallyImplyLeading: false,
-        leading: widget.showBackButton
-            ? IconButton(
-                tooltip: 'Quay lại',
-                icon: const Icon(Icons.arrow_back),
-                onPressed: _goBack,
-              )
-            : null,
-        actions: const [ThemeToggleButton(), SizedBox(width: 8)],
-      ),
-      body: StreamBuilder<List<PostCategory>>(
-        stream: _categoriesStream,
-        builder: (context, categorySnapshot) {
-          if (categorySnapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Không tải được danh mục:\n${categorySnapshot.error}',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          if (!categorySnapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final categories = categorySnapshot.data!
-              .where((category) => category.visible)
-              .toList(growable: false);
-          PostCategory? selectedCategory;
-          for (final category in categories) {
-            if (category.slug == widget.categorySlug) {
-              selectedCategory = category;
-              break;
-            }
-          }
-          if (widget.categorySlug != null && selectedCategory == null) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Danh mục không tồn tại hoặc đang được ẩn.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-
-          return StreamBuilder<List<Post>>(
-            stream: _stream,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'Không tải được bài viết:\n${snapshot.error}',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                );
-              }
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              // Trang công khai tuyệt đối không hiện bản nháp, kể cả khi
-              // trình duyệt đang giữ phiên đăng nhập admin.
-              final posts = snapshot.data!
-                  .where(
-                    (post) =>
-                        post.published &&
-                        (selectedCategory == null ||
-                            post.categoryId == selectedCategory.id),
-                  )
-                  .toList(growable: false);
-              final categoryById = {
-                for (final category in categories) category.id: category,
-              };
-
-              return Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720),
-                  child: Column(
-                    children: [
-                      _categoryBar(categories, selectedCategory),
-                      if (selectedCategory?.description.isNotEmpty ?? false)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(selectedCategory!.description),
-                          ),
-                        ),
-                      Expanded(
-                        child: posts.isEmpty
-                            ? Center(
-                                child: Text(
-                                  selectedCategory == null
-                                      ? 'Chưa có bài viết nào.'
-                                      : 'Danh mục này chưa có bài viết.',
-                                ),
-                              )
-                            : ListView.builder(
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  2,
-                                  16,
-                                  32,
-                                ),
-                                itemCount: posts.length,
-                                itemBuilder: (context, index) => _postCard(
-                                  posts[index],
-                                  categoryById[posts[index].categoryId],
-                                ),
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _categoryBar(
-    List<PostCategory> categories,
-    PostCategory? selectedCategory,
-  ) {
-    if (categories.isEmpty) return const SizedBox(height: 12);
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      child: Row(
-        children: [
-          ChoiceChip(
-            label: const Text('Tất cả'),
-            selected: selectedCategory == null,
-            onSelected: (_) => context.go('/'),
-          ),
-          for (final category in categories) ...[
-            const SizedBox(width: 8),
-            ChoiceChip(
-              label: Text(category.name),
-              selected: selectedCategory?.id == category.id,
-              onSelected: (_) => context.go('/categories/${category.slug}'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _postCard(Post post, PostCategory? category) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final cover = post.coverUrl;
-    final snippet = post.snippet;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () =>
-            context.push(postDetailPath(id: post.id, title: post.title)),
+      body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Ảnh bìa = ảnh đầu tiên trong bài (nếu có).
-            if (cover.isNotEmpty)
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: Image.network(
-                  cover,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, progress) => progress == null
-                      ? child
-                      : const Center(child: CircularProgressIndicator()),
-                  errorBuilder: (context, error, stack) =>
-                      const Center(child: Icon(Icons.broken_image_outlined)),
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    post.title.trim().isEmpty
-                        ? '(Chưa có tiêu đề)'
-                        : post.title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      height: 1.3,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _formatDate(post.timeCreated ?? post.timeUpdated),
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (category != null) ...[
-                    const SizedBox(height: 7),
-                    ActionChip(
-                      visualDensity: VisualDensity.compact,
-                      avatar: const Icon(Icons.folder_outlined, size: 16),
-                      label: Text(category.name),
-                      onPressed: () =>
-                          context.go('/categories/${category.slug}'),
-                    ),
-                  ],
-                  if (snippet.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      snippet,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 14.5,
-                        height: 1.5,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ],
+            const PublicationHeader(),
+            Expanded(
+              child: StreamBuilder<List<PostCategory>>(
+                stream: _categories,
+                builder: (context, categorySnapshot) {
+                  if (categorySnapshot.hasError) {
+                    return const _ArchiveState(
+                      text: 'Không thể tải danh mục lúc này.',
+                    );
+                  }
+                  if (!categorySnapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final categories = categorySnapshot.data!
+                      .where((category) => category.visible)
+                      .toList(growable: false);
+                  final selected = _selectedCategory(categories);
+                  if (widget.categorySlug != null && selected == null) {
+                    return const _ArchiveState(
+                      text: 'Danh mục này không tồn tại hoặc đang được ẩn.',
+                    );
+                  }
+
+                  return StreamBuilder<List<Post>>(
+                    stream: _posts,
+                    builder: (context, postSnapshot) {
+                      if (postSnapshot.hasError) {
+                        return const _ArchiveState(
+                          text: 'Không thể tải bài viết lúc này.',
+                        );
+                      }
+                      if (!postSnapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      final posts = postSnapshot.data!
+                          .where(
+                            (post) =>
+                                post.published &&
+                                (selected == null ||
+                                    post.categoryId == selected.id),
+                          )
+                          .toList(growable: false);
+                      return _archive(
+                        posts: posts,
+                        categories: categories,
+                        selected: selected,
+                      );
+                    },
+                  );
+                },
               ),
             ),
           ],
@@ -291,4 +91,369 @@ class _PostsPageState extends State<PostsPage> {
       ),
     );
   }
+
+  PostCategory? _selectedCategory(List<PostCategory> categories) {
+    if (widget.categorySlug == null) return null;
+    for (final category in categories) {
+      if (category.slug == widget.categorySlug) return category;
+    }
+    return null;
+  }
+
+  Widget _archive({
+    required List<Post> posts,
+    required List<PostCategory> categories,
+    required PostCategory? selected,
+  }) {
+    final categoryById = {
+      for (final category in categories) category.id: category,
+    };
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 980),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 62),
+                    if (widget.showBackButton)
+                      InkWell(
+                        onTap: () => context.go('/'),
+                        child: Text(
+                          '←  TRANG CHỦ',
+                          style: _metaStyle(context, accent: true),
+                        ),
+                      ),
+                    const SizedBox(height: 30),
+                    Text(
+                      selected?.name ?? 'Tất cả bài viết',
+                      style: TextStyle(
+                        fontFamily: AppTheme.serifFont,
+                        fontSize: MediaQuery.sizeOf(context).width < 640
+                            ? 42
+                            : 56,
+                        height: 1.08,
+                        letterSpacing: -1.1,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 620),
+                      child: Text(
+                        selected?.description.isNotEmpty == true
+                            ? selected!.description
+                            : 'Những bài viết dài, ghi chú kỹ thuật và điều mình học được trong quá trình xây dựng sản phẩm.',
+                        style: TextStyle(
+                          fontFamily: AppTheme.serifFont,
+                          fontSize: 18,
+                          height: 1.65,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 42),
+                    _CategoryIndex(categories: categories, selected: selected),
+                    const SizedBox(height: 44),
+                    _ArchiveCount(count: posts.length),
+                    const SizedBox(height: 8),
+                    if (posts.isEmpty)
+                      const _EmptyArchive()
+                    else
+                      for (final post in posts)
+                        _ArchiveRow(
+                          post: post,
+                          category: categoryById[post.categoryId],
+                        ),
+                    const SizedBox(height: 96),
+                    const PublicationFooter(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CategoryIndex extends StatelessWidget {
+  const _CategoryIndex({required this.categories, this.selected});
+
+  final List<PostCategory> categories;
+  final PostCategory? selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 17),
+      decoration: BoxDecoration(
+        border: Border.symmetric(
+          horizontal: BorderSide(color: colors.outlineVariant),
+        ),
+      ),
+      child: Wrap(
+        spacing: 24,
+        runSpacing: 13,
+        children: [
+          _CategoryLink(
+            label: 'Tất cả',
+            selected: selected == null,
+            onTap: () => context.go('/posts'),
+          ),
+          for (final category in categories)
+            _CategoryLink(
+              label: category.name,
+              selected: selected?.id == category.id,
+              onTap: () => context.go('/categories/${category.slug}'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryLink extends StatelessWidget {
+  const _CategoryLink({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontFamily: AppTheme.monoFont,
+            fontSize: 12.5,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+            color: selected ? colors.primary : colors.onSurfaceVariant,
+            decoration: selected ? TextDecoration.underline : null,
+            decorationColor: colors.primary,
+            decorationThickness: 1.5,
+            decorationStyle: TextDecorationStyle.solid,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ArchiveCount extends StatelessWidget {
+  const _ArchiveCount({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text('$count BÀI VIẾT', style: _metaStyle(context, accent: true));
+  }
+}
+
+class _ArchiveRow extends StatelessWidget {
+  const _ArchiveRow({required this.post, this.category});
+
+  final Post post;
+  final PostCategory? category;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () =>
+            context.push(postDetailPath(id: post.id, title: post.title)),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 28),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: colors.outlineVariant)),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final metadata = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _formatDate(post.timeCreated ?? post.timeUpdated),
+                    style: _metaStyle(context),
+                  ),
+                  if (category != null && category!.name.isNotEmpty) ...[
+                    const SizedBox(height: 7),
+                    Text(
+                      category!.name.toUpperCase(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: _metaStyle(context, accent: true),
+                    ),
+                  ],
+                ],
+              );
+              final article = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    post.title.trim().isEmpty
+                        ? '(Chưa có tiêu đề)'
+                        : post.title,
+                    style: TextStyle(
+                      fontFamily: AppTheme.serifFont,
+                      fontSize: 27,
+                      height: 1.22,
+                      letterSpacing: -0.35,
+                      fontWeight: FontWeight.w700,
+                      color: colors.onSurface,
+                    ),
+                  ),
+                  if (post.snippet.isNotEmpty) ...[
+                    const SizedBox(height: 11),
+                    Text(
+                      post.snippet,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: AppTheme.serifFont,
+                        fontSize: 16.5,
+                        height: 1.55,
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              );
+
+              if (constraints.maxWidth < 680) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    metadata,
+                    const SizedBox(height: 15),
+                    article,
+                    const SizedBox(height: 13),
+                    Text(
+                      '${_readingMinutes(post)} PHÚT ĐỌC  →',
+                      style: _metaStyle(context),
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(width: 160, child: metadata),
+                  Expanded(child: article),
+                  const SizedBox(width: 36),
+                  SizedBox(
+                    width: 96,
+                    child: Text(
+                      '${_readingMinutes(post)} PHÚT\nĐỌC  →',
+                      textAlign: TextAlign.right,
+                      style: _metaStyle(context),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyArchive extends StatelessWidget {
+  const _EmptyArchive();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      decoration: BoxDecoration(
+        border: Border.symmetric(
+          horizontal: BorderSide(color: colors.outlineVariant),
+        ),
+      ),
+      child: Text(
+        'Chưa có bài viết nào trong mục này.',
+        style: TextStyle(
+          fontFamily: AppTheme.serifFont,
+          fontSize: 18,
+          color: colors.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+class _ArchiveState extends StatelessWidget {
+  const _ArchiveState({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: AppTheme.serifFont,
+            fontSize: 19,
+            height: 1.6,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+TextStyle _metaStyle(BuildContext context, {bool accent = false}) {
+  final colors = Theme.of(context).colorScheme;
+  return TextStyle(
+    fontFamily: AppTheme.monoFont,
+    fontSize: 11.5,
+    height: 1.45,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.45,
+    color: accent ? colors.primary : colors.onSurfaceVariant,
+  );
+}
+
+String _formatDate(DateTime? value) {
+  if (value == null) return '';
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(value.day)}.${two(value.month)}.${value.year}';
+}
+
+int _readingMinutes(Post post) {
+  final words = post.blocks
+      .where((block) => block.type.isText && block.type != PostBlockType.code)
+      .expand((block) => block.text.trim().split(RegExp(r'\s+')))
+      .where((word) => word.isNotEmpty)
+      .length;
+  return (words / 220).ceil().clamp(1, 99);
 }

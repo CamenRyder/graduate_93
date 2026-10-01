@@ -16,7 +16,7 @@ import '../widgets/theme_toggle_button.dart';
 
 /// Trình soạn bài viết dạng KHỐI (tự viết, không dùng thư viện editor):
 /// tiêu đề + danh sách khối theo thứ tự, mỗi khối là Đề mục / Đề mục phụ /
-/// Đoạn văn / Trích dẫn / Ảnh.
+/// Đoạn văn / Trích dẫn / Mã nguồn / Ảnh.
 ///
 /// - Khối văn bản: TextField nhiều dòng tự giãn theo nội dung, đổi được loại,
 ///   tô được màu nền (tái dùng RowPalette — hợp cả Sáng lẫn Tối).
@@ -203,6 +203,7 @@ class _PostEditorPageState extends State<PostEditorPage> {
     PostBlockType.subheading => Icons.text_fields,
     PostBlockType.paragraph => Icons.notes,
     PostBlockType.quote => Icons.format_quote,
+    PostBlockType.code => Icons.code,
     PostBlockType.image => Icons.image_outlined,
   };
 
@@ -638,7 +639,8 @@ class _PostEditorPageState extends State<PostEditorPage> {
             children: [
               d.type.isText ? _typeMenu(d) : _imageLabel(),
               const Spacer(),
-              if (d.type.isText) _highlightMenu(d),
+              if (d.type.isText && d.type != PostBlockType.code)
+                _highlightMenu(d),
               _iconBtn(
                 Icons.arrow_upward,
                 'Chuyển lên',

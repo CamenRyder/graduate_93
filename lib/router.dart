@@ -9,6 +9,7 @@ import 'pages/categories_admin_page.dart';
 import 'pages/countdown_page.dart';
 import 'pages/gallery_page.dart';
 import 'pages/guide_page.dart';
+import 'pages/home_page.dart';
 import 'pages/invite_detail_page.dart';
 import 'pages/login_page.dart';
 import 'pages/love_page.dart';
@@ -23,8 +24,8 @@ import 'pages/welcome_page.dart';
 /// Cấu hình điều hướng theo URL.
 ///
 /// Công khai (không cần đăng nhập):
-///  - `/`          : danh sách bài viết đã đăng
-///  - `/posts`     : alias danh sách bài viết đã đăng
+///  - `/`          : trang chủ ấn phẩm cá nhân
+///  - `/posts`     : kho bài viết đã đăng
 ///  - `/posts/:id/:slug` : đọc chi tiết 1 bài viết đã đăng
 ///  - `/categories/:slug` : danh sách bài viết theo danh mục
 ///  - `/auth`      : xác thực khách mời (nhập code + số điện thoại)
@@ -81,7 +82,11 @@ final router = GoRouter(
     return null;
   },
   routes: [
-    GoRoute(path: '/', builder: (context, state) => const PostsPage()),
+    GoRoute(
+      path: '/',
+      builder: (context, state) =>
+          HomePage(initialSection: state.uri.queryParameters['section']),
+    ),
     GoRoute(path: '/auth', builder: (context, state) => const AuthPage()),
     GoRoute(path: '/welcome', builder: (context, state) => const WelcomePage()),
     GoRoute(
