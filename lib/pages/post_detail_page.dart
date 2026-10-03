@@ -9,6 +9,7 @@ import '../services/post_service.dart';
 import '../theme.dart';
 import '../theme/post_styles.dart';
 import '../widgets/publication_chrome.dart';
+import '../widgets/scroll_reveal.dart';
 
 /// Trang đọc tập trung: cột nội dung 720px, tiến độ đọc và mục lục cố định
 /// bên phải trên desktop.
@@ -182,88 +183,88 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final text = block.text.trim();
     if (text.isEmpty) return const SizedBox.shrink();
     if (block.type == PostBlockType.code || _looksLikeFencedCode(text)) {
-      return _CodeBlock(code: _stripCodeFence(text));
+      return ScrollReveal(child: _CodeBlock(code: _stripCodeFence(text)));
     }
 
-    final colors = Theme.of(context).colorScheme;
     final style = postBlockTextStyle(context, block.type);
     Widget content = SelectableText(text, style: style);
 
     if (block.type == PostBlockType.quote) {
       content = Container(
         padding: const EdgeInsets.only(left: 22),
-        decoration: BoxDecoration(
-          border: Border(left: BorderSide(color: colors.primary, width: 2)),
-        ),
+        decoration: postQuoteDecoration(context),
         child: content,
       );
     }
 
-    if (block.highlight.isNotEmpty) {
+    final highlight = postHighlightDecoration(context, block.highlight);
+    if (highlight != null) {
       content = Container(
         width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 17),
-        decoration: BoxDecoration(
-          color: colors.primary.withValues(alpha: 0.065),
-          border: Border(left: BorderSide(color: colors.primary, width: 2)),
-        ),
+        padding: postHighlightPadding,
+        decoration: highlight,
         child: content,
       );
     }
 
-    final margin = switch (block.type) {
-      PostBlockType.heading => const EdgeInsets.only(top: 48, bottom: 10),
-      PostBlockType.subheading => const EdgeInsets.only(top: 34, bottom: 8),
-      PostBlockType.quote => const EdgeInsets.symmetric(vertical: 25),
-      _ => const EdgeInsets.symmetric(vertical: 8),
-    };
+    final margin = postBlockSpacing(block.type);
 
     final keyed =
         block.type == PostBlockType.heading ||
             block.type == PostBlockType.subheading
         ? KeyedSubtree(key: _headingKey(index), child: content)
         : content;
-    return Padding(padding: margin, child: keyed);
+    return ScrollReveal(
+      fadeDistance: 90,
+      offset: 14,
+      child: Padding(padding: margin, child: keyed),
+    );
   }
 
   Widget _imageView(PostBlock block) {
     if (block.url.isEmpty) return const SizedBox.shrink();
     final colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 32),
-      child: Semantics(
-        button: true,
-        label: 'Mở ảnh ở chế độ toàn màn hình',
-        child: GestureDetector(
-          onTap: () => _openFullScreen(block.url),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: colors.outlineVariant),
-            ),
-            child: Image.network(
-              block.url,
-              width: double.infinity,
-              fit: BoxFit.fitWidth,
-              loadingBuilder: (context, child, progress) => progress == null
-                  ? child
-                  : SizedBox(
-                      height: 260,
-                      child: ColoredBox(
-                        color: colors.surfaceContainerLow,
-                        child: const Center(child: CircularProgressIndicator()),
+    return ScrollReveal(
+      child: Padding(
+        padding: postBlockSpacing(PostBlockType.image),
+        child: Semantics(
+          button: true,
+          label: 'Mở ảnh ở chế độ toàn màn hình',
+          child: GestureDetector(
+            onTap: () => _openFullScreen(block.url),
+            child: Container(
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                border: Border.all(color: colors.outlineVariant),
+              ),
+              child: Image.network(
+                block.url,
+                width: double.infinity,
+                fit: BoxFit.fitWidth,
+                loadingBuilder: (context, child, progress) => progress == null
+                    ? child
+                    : SizedBox(
+                        height: 260,
+                        child: ColoredBox(
+                          color: colors.surfaceContainerLow,
+                          child: const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        ),
                       ),
-                    ),
-              errorBuilder: (context, error, stack) => SizedBox(
-                height: 160,
-                child: ColoredBox(
-                  color: colors.surfaceContainerLow,
-                  child: Center(
-                    child: Text(
-                      'Không tải được ảnh',
-                      style: TextStyle(
-                        fontFamily: AppTheme.monoFont,
-                        fontSize: 12,
-                        color: colors.onSurfaceVariant,
+                errorBuilder: (context, error, stack) => SizedBox(
+                  height: 160,
+                  child: ColoredBox(
+                    color: colors.surfaceContainerLow,
+                    child: Center(
+                      child: Text(
+                        'Không tải được ảnh',
+                        style: TextStyle(
+                          fontFamily: AppTheme.monoFont,
+                          fontSize: 12,
+                          color: colors.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   ),
@@ -376,12 +377,11 @@ class _ArticleHeader extends StatelessWidget {
         const SizedBox(height: 34),
         Text(
           post.title.trim().isEmpty ? '(Chưa có tiêu đề)' : post.title,
-          style: TextStyle(
-            fontFamily: AppTheme.serifFont,
-            fontSize: MediaQuery.sizeOf(context).width < 680 ? 39 : 54,
+          style: AppTheme.serif(
+            size: MediaQuery.sizeOf(context).width < 680 ? 38 : 54,
+            weight: FontWeight.w600,
             height: 1.08,
-            letterSpacing: -1.15,
-            fontWeight: FontWeight.w700,
+            letterSpacing: -1.2,
             color: colors.onSurface,
           ),
         ),
@@ -499,28 +499,23 @@ class _CodeBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     final lines = code.split('\n');
     final digits = lines.length.toString().length;
     final numbers = [
       for (var index = 0; index < lines.length; index++)
         (index + 1).toString().padLeft(digits),
     ].join('\n');
-    const codeColor = Color(0xFFE9EAF0);
-    const gutterColor = Color(0xFF777B87);
-    const codeBackground = Color(0xFF17191E);
+    const codeColor = PostCodeColors.text;
+    const gutterColor = PostCodeColors.gutter;
+    const codeBackground = PostCodeColors.background;
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 28),
+      margin: postBlockSpacing(PostBlockType.code),
       decoration: BoxDecoration(
         color: codeBackground,
-        border: Border(
-          top: BorderSide(color: colors.primary, width: 2),
-          left: const BorderSide(color: Color(0xFF30333B)),
-          right: const BorderSide(color: Color(0xFF30333B)),
-          bottom: const BorderSide(color: Color(0xFF30333B)),
-        ),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+        border: Border.all(color: PostCodeColors.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -538,7 +533,7 @@ class _CodeBlock extends StatelessWidget {
               ),
             ),
           ),
-          const Divider(height: 1, color: Color(0xFF30333B)),
+          const Divider(height: 1, color: PostCodeColors.border),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(18, 17, 24, 20),
@@ -559,7 +554,9 @@ class _CodeBlock extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.only(left: 18),
                   decoration: const BoxDecoration(
-                    border: Border(left: BorderSide(color: Color(0xFF30333B))),
+                    border: Border(
+                      left: BorderSide(color: PostCodeColors.border),
+                    ),
                   ),
                   child: SelectableText(
                     code,

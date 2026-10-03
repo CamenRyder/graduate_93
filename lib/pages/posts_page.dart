@@ -8,6 +8,7 @@ import '../services/post_service.dart';
 import '../theme.dart';
 import '../utils/post_slug.dart';
 import '../widgets/publication_chrome.dart';
+import '../widgets/scroll_reveal.dart';
 
 /// Kho bài viết công khai, trình bày như mục lục của một ấn phẩm thay vì lưới
 /// thẻ. Bản nháp luôn bị loại khỏi luồng công khai.
@@ -158,7 +159,12 @@ class _PostsPageState extends State<PostsPage> {
                       ),
                     ),
                     const SizedBox(height: 42),
-                    _CategoryIndex(categories: categories, selected: selected),
+                    ScrollReveal(
+                      child: _CategoryIndex(
+                        categories: categories,
+                        selected: selected,
+                      ),
+                    ),
                     const SizedBox(height: 44),
                     _ArchiveCount(count: posts.length),
                     const SizedBox(height: 8),
@@ -166,9 +172,11 @@ class _PostsPageState extends State<PostsPage> {
                       const _EmptyArchive()
                     else
                       for (final post in posts)
-                        _ArchiveRow(
-                          post: post,
-                          category: categoryById[post.categoryId],
+                        ScrollReveal(
+                          child: _ArchiveRow(
+                            post: post,
+                            category: categoryById[post.categoryId],
+                          ),
                         ),
                     const SizedBox(height: 96),
                     const PublicationFooter(),

@@ -8,6 +8,7 @@ import '../services/post_service.dart';
 import '../theme.dart';
 import '../utils/post_slug.dart';
 import '../widgets/publication_chrome.dart';
+import '../widgets/scroll_reveal.dart';
 
 /// Trang chủ theo hướng ấn phẩm cá nhân: bài viết là nội dung trung tâm,
 /// không dùng hero marketing hay lưới card kiểu portfolio.
@@ -71,7 +72,7 @@ class _HomePageState extends State<HomePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const _Introduction(),
+                        const ScrollReveal(child: _Introduction()),
                         StreamBuilder<List<PostCategory>>(
                           stream: _categories,
                           builder: (context, categorySnapshot) {
@@ -227,9 +228,11 @@ class _PublicationBody extends StatelessWidget {
         if (featured == null)
           const _EmptyWriting()
         else
-          _FeaturedArticle(
-            post: featured,
-            category: categoryById[featured.categoryId],
+          ScrollReveal(
+            child: _FeaturedArticle(
+              post: featured,
+              category: categoryById[featured.categoryId],
+            ),
           ),
         const SizedBox(height: 92),
         _SectionHeading(
@@ -255,18 +258,27 @@ class _PublicationBody extends StatelessWidget {
           )
         else
           for (final post in latest)
-            _WritingRow(post: post, category: categoryById[post.categoryId]),
+            ScrollReveal(
+              child: _WritingRow(
+                post: post,
+                category: categoryById[post.categoryId],
+              ),
+            ),
         const SizedBox(height: 100),
         _SectionHeading(key: notesKey, number: '03', label: 'Dự án & ghi chú'),
         const SizedBox(height: 18),
-        const _ProjectRow(),
+        const ScrollReveal(child: _ProjectRow()),
         for (final category in categories.take(4))
-          _NoteRow(
-            category: category,
-            count: posts.where((post) => post.categoryId == category.id).length,
+          ScrollReveal(
+            child: _NoteRow(
+              category: category,
+              count: posts
+                  .where((post) => post.categoryId == category.id)
+                  .length,
+            ),
           ),
         const SizedBox(height: 104),
-        _AboutSection(key: aboutKey),
+        ScrollReveal(child: _AboutSection(key: aboutKey)),
         const SizedBox(height: 104),
       ],
     );
@@ -288,34 +300,36 @@ class _SectionHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Text(
-          number,
-          style: TextStyle(
-            fontFamily: AppTheme.monoFont,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-            color: colors.primary,
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Text(
-            label,
+    return ScrollReveal(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text(
+            number,
             style: TextStyle(
-              fontFamily: AppTheme.serifFont,
-              fontSize: 28,
+              fontFamily: AppTheme.monoFont,
+              fontSize: 12,
               fontWeight: FontWeight.w700,
-              letterSpacing: -0.4,
-              color: colors.onSurface,
+              letterSpacing: 0.8,
+              color: colors.primary,
             ),
           ),
-        ),
-        trailing ?? const SizedBox.shrink(),
-      ],
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: AppTheme.serifFont,
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.4,
+                color: colors.onSurface,
+              ),
+            ),
+          ),
+          trailing ?? const SizedBox.shrink(),
+        ],
+      ),
     );
   }
 }

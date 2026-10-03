@@ -34,38 +34,40 @@ class PublicationHeader extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 1120),
               child: Padding(
                 padding: EdgeInsets.symmetric(
-                  horizontal: compact ? 20 : 32,
-                  vertical: compact ? 18 : 22,
+                  horizontal: compact ? 16 : 32,
+                  vertical: compact ? 12 : 16,
                 ),
                 child: Row(
                   children: [
-                    _TextLink(
-                      label: compact ? 'MH' : 'MINH HIẾU / NOTES',
-                      onTap: () => context.go('/'),
-                      strong: true,
-                    ),
+                    _Wordmark(onTap: () => context.go('/'), compact: compact),
                     const Spacer(),
                     _TextLink(
                       label: 'Bài viết',
                       onTap: onWriting ?? () => context.go('/posts'),
                     ),
                     if (!compact) ...[
-                      const SizedBox(width: 20),
                       _TextLink(
                         label: 'Ghi chú',
                         onTap: onNotes ?? () => context.go('/?section=notes'),
                       ),
-                      const SizedBox(width: 20),
                       _TextLink(
                         label: 'Giới thiệu',
                         onTap: onAbout ?? () => context.go('/?section=about'),
                       ),
                     ],
-                    SizedBox(width: compact ? 12 : 22),
-                    _TextLink(
-                      label: isDark ? 'Sáng' : 'Tối',
-                      color: colors.primary,
-                      onTap: () => themeController.setMode(
+                    const SizedBox(width: 6),
+                    IconButton(
+                      tooltip: isDark
+                          ? 'Chuyển chế độ sáng'
+                          : 'Chuyển chế độ tối',
+                      iconSize: 19,
+                      color: colors.onSurfaceVariant,
+                      icon: Icon(
+                        isDark
+                            ? Icons.light_mode_outlined
+                            : Icons.dark_mode_outlined,
+                      ),
+                      onPressed: () => themeController.setMode(
                         isDark ? ThemeMode.light : ThemeMode.dark,
                       ),
                     ),
@@ -76,6 +78,59 @@ class PublicationHeader extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Logo chữ: tên viết bằng serif nghiêng + nhãn mono nhỏ.
+class _Wordmark extends StatelessWidget {
+  const _Wordmark({required this.onTap, required this.compact});
+
+  final VoidCallback onTap;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      link: true,
+      label: 'Trang chủ',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                'Minh Hiếu',
+                style: AppTheme.serif(
+                  size: 22,
+                  weight: FontWeight.w600,
+                  style: FontStyle.italic,
+                  letterSpacing: -0.3,
+                  color: colors.onSurface,
+                ),
+              ),
+              if (!compact) ...[
+                const SizedBox(width: 10),
+                Text(
+                  'NOTES',
+                  style: AppTheme.mono(
+                    size: 10.5,
+                    weight: FontWeight.w700,
+                    letterSpacing: 1.4,
+                    color: colors.primary,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -123,37 +178,27 @@ class PublicationFooter extends StatelessWidget {
 }
 
 class _TextLink extends StatelessWidget {
-  const _TextLink({
-    required this.label,
-    required this.onTap,
-    this.strong = false,
-    this.color,
-  });
+  const _TextLink({required this.label, required this.onTap});
 
   final String label;
   final VoidCallback onTap;
-  final bool strong;
-  final Color? color;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(2),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontFamily: AppTheme.monoFont,
-            fontSize: 12.5,
-            fontWeight: strong ? FontWeight.w700 : FontWeight.w500,
-            letterSpacing: strong ? 0.75 : 0.1,
-            color: color ?? colors.onSurface,
-          ),
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: colors.onSurface,
+        minimumSize: const Size(44, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        textStyle: const TextStyle(
+          fontFamily: AppTheme.sansFont,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
         ),
       ),
+      child: Text(label),
     );
   }
 }
