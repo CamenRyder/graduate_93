@@ -1,11 +1,17 @@
 # Tự động build Flutter web và deploy lên Firebase Hosting (bản LIVE)
-# mỗi khi có code mới được push/merge vào nhánh main.
+# mỗi khi có code mới được push/merge vào nhánh main, khi bấm chạy tay,
+# và theo lịch hằng ngày (để cập nhật HTML tĩnh SEO cho bài mới).
 name: Deploy to Firebase Hosting on merge
 
 on:
   push:
     branches:
       - main
+  # Build lại để bài đăng sau lần deploy gần nhất có HTML tĩnh/sitemap:
+  # bấm tay trên tab Actions, hoặc tự chạy mỗi ngày 03:30 giờ Việt Nam.
+  workflow_dispatch: {}
+  schedule:
+    - cron: '30 20 * * *'
 
 jobs:
   build_and_deploy:
@@ -46,6 +52,9 @@ jobs:
           flutter build web --release \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+
+      - name: Prerender SEO (meta theo bài, sitemap, robots)
+        run: dart run tool/prerender.dart --build-dir build/web
 
       - name: Deploy to Firebase Hosting (live)
         uses: FirebaseExtended/action-hosting-deploy@v0

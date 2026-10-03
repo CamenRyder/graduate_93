@@ -4,27 +4,60 @@ import 'package:go_router/go_router.dart';
 import '../models/post.dart';
 import '../models/post_category.dart';
 import '../services/category_service.dart';
+import '../services/page_meta.dart';
 import '../services/post_service.dart';
 import '../theme.dart';
+import '../utils/post_search.dart';
 import '../utils/post_slug.dart';
+import '../utils/seo.dart';
 import '../widgets/publication_chrome.dart';
 
 /// Kho bài viết công khai, trình bày như mục lục của một ấn phẩm thay vì lưới
 /// thẻ. Bản nháp luôn bị loại khỏi luồng công khai.
 class PostsPage extends StatefulWidget {
-  const PostsPage({super.key, this.showBackButton = false, this.categorySlug});
+  const PostsPage({
+    super.key,
+    this.showBackButton = false,
+    this.categorySlug,
+    this.initialQuery = '',
+    @visibleForTesting this.postsStream,
+    @visibleForTesting this.categoriesStream,
+  });
 
   final bool showBackButton;
   final String? categorySlug;
+
+  /// Từ khóa ban đầu lấy từ `?q=` để link tìm kiếm mở ra đã lọc sẵn.
+  final String initialQuery;
+
+  /// Nguồn dữ liệu thay thế cho test (mặc định đọc Firestore).
+  final Stream<List<Post>>? postsStream;
+  final Stream<List<PostCategory>>? categoriesStream;
 
   @override
   State<PostsPage> createState() => _PostsPageState();
 }
 
 class _PostsPageState extends State<PostsPage> {
-  late final Stream<List<Post>> _posts = PostService().watchPosts();
-  late final Stream<List<PostCategory>> _categories = CategoryService()
-      .watchCategories();
+  late final Stream<List<Post>> _posts =
+      widget.postsStream ?? PostService().watchPosts();
+  late final Stream<List<PostCategory>> _categories =
+      widget.categoriesStream ?? CategoryService().watchCategories();
+  late final TextEditingController _search = TextEditingController(
+    text: widget.initialQuery,
+  );
+  late String _query = widget.initialQuery;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  void _setQuery(String value) {
+    if (value == _query) return;
+    setState(() => _query = value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,7 +101,7 @@ class _PostsPageState extends State<PostsPage> {
                         return const Center(child: CircularProgressIndicator());
                       }
 
-                      final posts = postSnapshot.data!
+                      final visible = postSnapshot.data!
                           .where(
                             (post) =>
                                 post.published &&
@@ -76,6 +109,16 @@ class _PostsPageState extends State<PostsPage> {
                                     post.categoryId == selected.id),
                           )
                           .toList(growable: false);
+                      // Lọc nháp TRƯỚC rồi mới tìm, để từ khóa không bao
+                      // giờ làm lộ bản nháp.
+                      final posts = searchPosts(
+                        visible,
+                        _query,
+                        categoryNames: {
+                          for (final category in categories)
+                            category.id: category.name,
+                        },
+                      );
                       return _archive(
                         posts: posts,
                         categories: categories,
@@ -108,6 +151,16 @@ class _PostsPageState extends State<PostsPage> {
     final categoryById = {
       for (final category in categories) category.id: category,
     };
+    // Trang kết quả tìm kiếm vẫn canonical về trang danh sách gốc.
+    PageMeta.set(
+      SeoMeta(
+        path: selected == null ? '/posts' : '/categories/${selected.slug}',
+        title: selected?.name ?? 'Tất cả bài viết',
+        description: selected?.description.isNotEmpty == true
+            ? selected!.description
+            : archiveDescription,
+      ),
+    );
     return CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
@@ -148,7 +201,7 @@ class _PostsPageState extends State<PostsPage> {
                       child: Text(
                         selected?.description.isNotEmpty == true
                             ? selected!.description
-                            : 'Những bài viết dài, ghi chú kỹ thuật và điều mình học được trong quá trình xây dựng sản phẩm.',
+                            : archiveDescription,
                         style: TextStyle(
                           fontFamily: AppTheme.serifFont,
                           fontSize: 18,
@@ -159,11 +212,20 @@ class _PostsPageState extends State<PostsPage> {
                     ),
                     const SizedBox(height: 42),
                     _CategoryIndex(categories: categories, selected: selected),
-                    const SizedBox(height: 44),
-                    _ArchiveCount(count: posts.length),
+                    const SizedBox(height: 28),
+                    _SearchField(
+                      controller: _search,
+                      onChanged: _setQuery,
+                      onClear: () {
+                        _search.clear();
+                        _setQuery('');
+                      },
+                    ),
+                    const SizedBox(height: 36),
+                    _ArchiveCount(count: posts.length, query: _query),
                     const SizedBox(height: 8),
                     if (posts.isEmpty)
-                      const _EmptyArchive()
+                      _EmptyArchive(query: _query)
                     else
                       for (final post in posts)
                         _ArchiveRow(
@@ -257,14 +319,89 @@ class _CategoryLink extends StatelessWidget {
   }
 }
 
-class _ArchiveCount extends StatelessWidget {
-  const _ArchiveCount({required this.count});
+/// Ô tìm kiếm kiểu "dòng kẻ" hợp với mục lục ấn phẩm: không khung, chỉ gạch
+/// dưới, chữ mono giống các nhãn meta.
+class _SearchField extends StatelessWidget {
+  const _SearchField({
+    required this.controller,
+    required this.onChanged,
+    required this.onClear,
+  });
 
-  final int count;
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
-    return Text('$count BÀI VIẾT', style: _metaStyle(context, accent: true));
+    final colors = Theme.of(context).colorScheme;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 620),
+      child: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, _) => TextField(
+          controller: controller,
+          onChanged: onChanged,
+          textInputAction: TextInputAction.search,
+          style: TextStyle(
+            fontFamily: AppTheme.serifFont,
+            fontSize: 18,
+            color: colors.onSurface,
+          ),
+          decoration: InputDecoration(
+            isDense: true,
+            // Theme chung dùng ô có nền; ô tìm kiếm của mục lục chỉ cần gạch dưới.
+            filled: false,
+            hintText: 'Tìm bài viết',
+            hintStyle: TextStyle(
+              fontFamily: AppTheme.serifFont,
+              fontSize: 18,
+              color: colors.onSurfaceVariant,
+            ),
+            prefixIcon: Icon(
+              Icons.search,
+              size: 20,
+              color: colors.onSurfaceVariant,
+            ),
+            prefixIconConstraints: const BoxConstraints(minWidth: 32),
+            suffixIcon: value.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Xóa tìm kiếm',
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: onClear,
+                  ),
+            border: UnderlineInputBorder(
+              borderSide: BorderSide(color: colors.outlineVariant),
+            ),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: colors.outlineVariant),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: colors.primary, width: 1.5),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ArchiveCount extends StatelessWidget {
+  const _ArchiveCount({required this.count, required this.query});
+
+  final int count;
+  final String query;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = query.trim();
+    return Text(
+      trimmed.isEmpty
+          ? '$count BÀI VIẾT'
+          : '$count KẾT QUẢ CHO “${trimmed.toUpperCase()}”',
+      style: _metaStyle(context, accent: true),
+    );
   }
 }
 
@@ -380,7 +517,9 @@ class _ArchiveRow extends StatelessWidget {
 }
 
 class _EmptyArchive extends StatelessWidget {
-  const _EmptyArchive();
+  const _EmptyArchive({required this.query});
+
+  final String query;
 
   @override
   Widget build(BuildContext context) {
@@ -395,7 +534,9 @@ class _EmptyArchive extends StatelessWidget {
         ),
       ),
       child: Text(
-        'Chưa có bài viết nào trong mục này.',
+        query.trim().isEmpty
+            ? 'Chưa có bài viết nào trong mục này.'
+            : 'Không tìm thấy bài viết nào khớp “${query.trim()}”.',
         style: TextStyle(
           fontFamily: AppTheme.serifFont,
           fontSize: 18,

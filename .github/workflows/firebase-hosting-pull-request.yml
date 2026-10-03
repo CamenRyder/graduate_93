@@ -51,6 +51,9 @@ jobs:
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
 
+      - name: Prerender SEO (meta theo bài, sitemap, robots)
+        run: dart run tool/prerender.dart --build-dir build/web
+
       - name: Deploy preview
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
