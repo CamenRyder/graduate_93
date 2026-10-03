@@ -4,7 +4,6 @@
     "indexes": "firestore.indexes.json"
   },
   "hosting": {
-    "target": "simonBlog",
     "public": "build/web",
     "cleanUrls": true,
     "ignore": [
