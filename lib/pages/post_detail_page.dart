@@ -5,9 +5,12 @@ import '../controllers/auth_controller.dart';
 import '../models/post.dart';
 import '../models/post_category.dart';
 import '../services/category_service.dart';
+import '../services/page_meta.dart';
 import '../services/post_service.dart';
 import '../theme.dart';
 import '../theme/post_styles.dart';
+import '../utils/post_slug.dart';
+import '../utils/seo.dart';
 import '../widgets/publication_chrome.dart';
 
 /// Trang đọc tập trung: cột nội dung 720px, tiến độ đọc và mục lục cố định
@@ -41,6 +44,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
       ..removeListener(_updateProgress)
       ..dispose();
     _progress.dispose();
+    PageMeta.reset();
     super.dispose();
   }
 
@@ -101,10 +105,25 @@ class _PostDetailPageState extends State<PostDetailPage> {
                   final post = snapshot.data;
                   if (post == null ||
                       (!post.published && !authController.isLoggedIn)) {
+                    PageMeta.set(
+                      SeoMeta(
+                        path: '/posts/${widget.postId}',
+                        title: 'Không tìm thấy bài viết',
+                      ),
+                    );
                     return const _MessageState(
                       text: 'Bài viết không tồn tại hoặc đã được gỡ.',
                     );
                   }
+                  PageMeta.set(
+                    SeoMeta(
+                      path: postDetailPath(id: post.id, title: post.title),
+                      title: post.title,
+                      description: summarize(post.snippet),
+                      imageUrl: post.coverUrl,
+                      isArticle: true,
+                    ),
+                  );
                   return _articleLayout(post);
                 },
               ),

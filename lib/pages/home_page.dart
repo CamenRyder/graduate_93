@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../models/post.dart';
 import '../models/post_category.dart';
 import '../services/category_service.dart';
+import '../services/page_meta.dart';
 import '../services/post_service.dart';
 import '../theme.dart';
 import '../utils/post_slug.dart';
@@ -30,6 +31,12 @@ class _HomePageState extends State<HomePage> {
   late final Stream<List<Post>> _posts = PostService().watchPosts();
   late final Stream<List<PostCategory>> _categories = CategoryService()
       .watchCategories();
+
+  @override
+  void initState() {
+    super.initState();
+    PageMeta.reset();
+  }
 
   @override
   void dispose() {
