@@ -81,6 +81,22 @@ Future<void> main(List<String> args) async {
       );
     }
 
+    final tags = collectTags(posts);
+    for (final entry in tags.entries) {
+      _write(
+        buildDir,
+        htmlFileForPath('/tags/${entry.key}'),
+        applySeo(
+          indexHtml,
+          SeoMeta(
+            path: '/tags/${entry.key}',
+            title: '#${entry.value.label}',
+            description: tagDescription(entry.value.label),
+          ),
+        ),
+      );
+    }
+
     DateTime? latest(Iterable<DateTime?> dates) => dates
         .whereType<DateTime>()
         .fold<DateTime?>(null, (a, b) => a == null || b.isAfter(a) ? b : a);
@@ -100,6 +116,8 @@ Future<void> main(List<String> args) async {
                   .map((p) => p.updated ?? p.created),
             ),
           ),
+        for (final entry in tags.entries)
+          (path: '/tags/${entry.key}', lastModified: entry.value.lastModified),
         for (final post in posts)
           (path: post.path, lastModified: post.updated ?? post.created),
       ]),
@@ -108,6 +126,7 @@ Future<void> main(List<String> args) async {
 
     stdout.writeln(
       'prerender: ${posts.length} bài, ${categories.length} danh mục, '
+      '${tags.length} thẻ, '
       'sitemap.xml + robots.txt -> ${buildDir.path}',
     );
   } finally {

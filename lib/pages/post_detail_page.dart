@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../controllers/auth_controller.dart';
@@ -7,35 +10,64 @@ import '../models/post_category.dart';
 import '../services/category_service.dart';
 import '../services/page_meta.dart';
 import '../services/post_service.dart';
+import '../services/share_service.dart';
 import '../theme.dart';
 import '../theme/post_styles.dart';
 import '../utils/post_slug.dart';
+import '../utils/post_tags.dart';
+import '../utils/related_posts.dart';
 import '../utils/seo.dart';
+import '../utils/share_links.dart';
 import '../widgets/publication_chrome.dart';
 
 /// Trang đọc tập trung: cột nội dung 720px, tiến độ đọc và mục lục cố định
 /// bên phải trên desktop.
 class PostDetailPage extends StatefulWidget {
-  const PostDetailPage({super.key, required this.postId});
+  const PostDetailPage({
+    super.key,
+    required this.postId,
+    @visibleForTesting this.postStream,
+    @visibleForTesting this.allPostsStream,
+    @visibleForTesting this.categoriesStream,
+  });
 
   final String postId;
+
+  /// Nguồn dữ liệu thay thế cho test (mặc định đọc Firestore).
+  final Stream<Post?>? postStream;
+  final Stream<List<Post>>? allPostsStream;
+  final Stream<List<PostCategory>>? categoriesStream;
 
   @override
   State<PostDetailPage> createState() => _PostDetailPageState();
 }
 
 class _PostDetailPageState extends State<PostDetailPage> {
-  late final Stream<Post?> _stream = PostService().watchPost(widget.postId);
-  late final Stream<List<PostCategory>> _categories = CategoryService()
-      .watchCategories();
+  late final Stream<Post?> _stream =
+      widget.postStream ?? PostService().watchPost(widget.postId);
+  late final Stream<List<PostCategory>> _categories =
+      widget.categoriesStream ?? CategoryService().watchCategories();
   final _scrollController = ScrollController();
   final _progress = ValueNotifier<double>(0);
   final Map<int, GlobalKey> _headingKeys = {};
+
+  /// Toàn bộ bài (cho mục "Đọc tiếp"). Nghe 1 lần ở đây thay vì StreamBuilder
+  /// trong danh sách: danh sách dựng lại khi đổi layout desktop/mobile, mà
+  /// stream Firestore không cho nghe hai lần.
+  List<Post> _allPosts = const [];
+  StreamSubscription<List<Post>>? _allPostsSub;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_updateProgress);
+    _allPostsSub = (widget.allPostsStream ?? PostService().watchPosts()).listen(
+      (posts) {
+        if (mounted) setState(() => _allPosts = posts);
+      },
+      // Không tải được gợi ý thì chỉ ẩn mục "Đọc tiếp", bài vẫn đọc được.
+      onError: (Object _) {},
+    );
   }
 
   @override
@@ -44,6 +76,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
       ..removeListener(_updateProgress)
       ..dispose();
     _progress.dispose();
+    _allPostsSub?.cancel();
     PageMeta.reset();
     super.dispose();
   }
@@ -186,6 +219,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                 for (var index = 0; index < post.blocks.length; index++)
                   _blockView(post.blocks[index], index),
                 const SizedBox(height: 70),
+                _ShareBar(post: post),
+                _ReadNext(posts: relatedPosts(post, _allPosts)),
                 const _ArticleEnd(),
               ],
             ),
@@ -437,6 +472,20 @@ class _ArticleHeader extends StatelessWidget {
             ),
           ],
         ),
+        if (post.tags.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 14,
+            runSpacing: 6,
+            children: [
+              for (final tag in post.tags)
+                InkWell(
+                  onTap: () => context.go(tagPath(tag)),
+                  child: Text('#$tag', style: _metaStyle(context)),
+                ),
+            ],
+          ),
+        ],
         const SizedBox(height: 36),
         Divider(height: 1, color: colors.outlineVariant),
       ],
@@ -593,6 +642,143 @@ class _CodeBlock extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Hàng nút chia sẻ cuối bài. Link luôn là URL canonical để mạng xã hội đọc
+/// được HTML tĩnh đã prerender (xem tool/prerender.dart).
+class _ShareBar extends StatelessWidget {
+  const _ShareBar({required this.post});
+
+  final Post post;
+
+  static const _share = ShareService();
+
+  @override
+  Widget build(BuildContext context) {
+    final url = '$siteUrl${postDetailPath(id: post.id, title: post.title)}';
+    final links = shareLinks(url: url, title: post.title);
+
+    Widget action(String label, VoidCallback onTap) => InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Text(label, style: _metaStyle(context)),
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 44),
+      child: Wrap(
+        spacing: 22,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text('CHIA SẺ', style: _metaStyle(context, accent: true)),
+          if (_share.canShareNatively)
+            action(
+              'CHIA SẺ…',
+              () => _share.shareNatively(title: post.title, url: url),
+            ),
+          action('SAO CHÉP LINK', () => _copyLink(context, url)),
+          action('FACEBOOK', () => _share.openWindow(links.facebook)),
+          action('X', () => _share.openWindow(links.x)),
+        ],
+      ),
+    );
+  }
+
+  /// Trình duyệt có thể từ chối ghi clipboard (Safari, iframe, quyền bị chặn):
+  /// khi đó hiện link dạng chọn được để người đọc tự sao chép.
+  ///
+  /// Có timeout vì trên web, khi `navigator.clipboard.writeText` bị từ chối,
+  /// engine Flutter nuốt lỗi và Future không bao giờ hoàn thành (đã thử với
+  /// Flutter 3.41.9) — không có timeout thì người dùng bấm mà không thấy gì.
+  static Future<void> _copyLink(BuildContext context, String url) async {
+    try {
+      await Clipboard.setData(
+        ClipboardData(text: url),
+      ).timeout(const Duration(seconds: 2));
+    } catch (_) {
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Sao chép liên kết'),
+          content: SelectableText(url),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Đóng'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Đã sao chép liên kết')));
+  }
+}
+
+/// Gợi ý bài đọc tiếp — xem [relatedPosts] để biết cách chọn.
+class _ReadNext extends StatelessWidget {
+  const _ReadNext({required this.posts});
+
+  final List<Post> posts;
+
+  @override
+  Widget build(BuildContext context) {
+    if (posts.isEmpty) return const SizedBox.shrink();
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 56),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('ĐỌC TIẾP', style: _metaStyle(context, accent: true)),
+          const SizedBox(height: 10),
+          for (final post in posts)
+            InkWell(
+              onTap: () =>
+                  context.go(postDetailPath(id: post.id, title: post.title)),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: colors.outlineVariant),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _formatDate(post.timeCreated ?? post.timeUpdated),
+                      style: _metaStyle(context),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      post.title.trim().isEmpty
+                          ? '(Chưa có tiêu đề)'
+                          : post.title,
+                      style: TextStyle(
+                        fontFamily: AppTheme.serifFont,
+                        fontSize: 22,
+                        height: 1.25,
+                        fontWeight: FontWeight.w700,
+                        color: colors.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );

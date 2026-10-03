@@ -7,8 +7,8 @@ String normalizeSearchText(String text) =>
 
 /// Lọc [posts] theo [query] ngay trên danh sách đã tải (không gọi Firestore).
 ///
-/// Bài khớp khi MỌI từ trong truy vấn xuất hiện ở tiêu đề, nội dung văn bản
-/// hoặc tên danh mục (tra qua [categoryNames] theo `categoryId`). Bài có từ
+/// Bài khớp khi MỌI từ trong truy vấn xuất hiện ở tiêu đề, nội dung văn bản,
+/// thẻ hoặc tên danh mục (tra qua [categoryNames] theo `categoryId`). Bài có từ
 /// khóa nằm trong tiêu đề được đưa lên trước; trong cùng nhóm giữ nguyên thứ
 /// tự đầu vào (mới nhất trước). Truy vấn rỗng trả lại nguyên danh sách.
 List<Post> searchPosts(
@@ -28,6 +28,7 @@ List<Post> searchPosts(
     final haystack = [
       title,
       normalizeSearchText(categoryNames[post.categoryId] ?? ''),
+      for (final tag in post.tags) normalizeSearchText(tag),
       for (final block in post.blocks)
         if (block.type.isText) normalizeSearchText(block.text),
     ].join('\n');

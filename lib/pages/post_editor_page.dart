@@ -10,6 +10,7 @@ import '../services/post_service.dart';
 import '../services/storage_service.dart';
 import '../theme/post_styles.dart';
 import '../theme/row_palette.dart';
+import '../utils/post_tags.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/gallery_image_picker_dialog.dart';
 import '../widgets/theme_toggle_button.dart';
@@ -67,6 +68,8 @@ class _PostEditorPageState extends State<PostEditorPage> {
   final _imageUpload = PostImageUploadMiddleware();
 
   final _titleCtrl = TextEditingController();
+  final _tagCtrl = TextEditingController();
+  final _tags = <String>[];
   final _blocks = <_BlockDraft>[];
   late final Stream<List<PostCategory>> _categoriesStream = _categoryService
       .watchCategories();
@@ -98,6 +101,7 @@ class _PostEditorPageState extends State<PostEditorPage> {
   @override
   void dispose() {
     _titleCtrl.dispose();
+    _tagCtrl.dispose();
     for (final d in _blocks) {
       d.ctrl?.dispose();
     }
@@ -140,6 +144,9 @@ class _PostEditorPageState extends State<PostEditorPage> {
       setState(() {
         _published = post.published;
         _categoryId = post.categoryId;
+        _tags
+          ..clear()
+          ..addAll(post.tags);
         _loading = false;
       });
     } catch (e) {
@@ -395,6 +402,8 @@ class _PostEditorPageState extends State<PostEditorPage> {
         title: title,
         published: _published,
         categoryId: _categoryId,
+        // Gồm cả thẻ đang gõ dở chưa nhấn Enter.
+        tags: normalizeTags([..._tags, ...parseTagInput(_tagCtrl.text)]),
         blocks: blocks,
         timeCreated: null,
         timeUpdated: null,
@@ -505,6 +514,8 @@ class _PostEditorPageState extends State<PostEditorPage> {
             ),
             const SizedBox(height: 8),
             _categoryField(),
+            const SizedBox(height: 12),
+            _tagsField(),
             const SizedBox(height: 16),
             for (var i = 0; i < _blocks.length; i++) _blockCard(i),
             const SizedBox(height: 8),
@@ -534,6 +545,61 @@ class _PostEditorPageState extends State<PostEditorPage> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Đưa nội dung đang gõ trong ô thẻ vào danh sách (đã chuẩn hóa).
+  void _commitTagInput() {
+    final next = normalizeTags([..._tags, ...parseTagInput(_tagCtrl.text)]);
+    _tagCtrl.clear();
+    setState(
+      () => _tags
+        ..clear()
+        ..addAll(next),
+    );
+  }
+
+  Widget _tagsField() {
+    final full = _tags.length >= maxTagsPerPost;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _tagCtrl,
+          enabled: !_saving && !full,
+          textInputAction: TextInputAction.done,
+          decoration: InputDecoration(
+            labelText: 'Thẻ',
+            prefixIcon: const Icon(Icons.sell_outlined),
+            helperText: full
+                ? 'Đã đủ $maxTagsPerPost thẻ'
+                : 'Nhấn Enter hoặc gõ dấu phẩy để thêm · tối đa $maxTagsPerPost thẻ',
+          ),
+          onChanged: (value) {
+            if (value.contains(RegExp(r'[,;\n]'))) _commitTagInput();
+          },
+          onSubmitted: (_) => _commitTagInput(),
+          // Giữ focus sau Enter để gõ tiếp thẻ sau.
+          onEditingComplete: () {},
+        ),
+        if (_tags.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final tag in _tags)
+                InputChip(
+                  label: Text(tag),
+                  onDeleted: _saving
+                      ? null
+                      : () => setState(() => _tags.remove(tag)),
+                  deleteButtonTooltipMessage: 'Gỡ thẻ $tag',
+                ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 

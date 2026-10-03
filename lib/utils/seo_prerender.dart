@@ -7,6 +7,7 @@ library;
 import 'dart:convert';
 
 import 'post_slug.dart';
+import 'post_tags.dart';
 import 'seo.dart';
 
 const seoStartMarker = '<!-- seo:start';
@@ -37,6 +38,7 @@ class SeoPost {
     required this.summary,
     this.imageUrl = '',
     this.categoryId = '',
+    this.tags = const [],
     this.created,
     this.updated,
   });
@@ -47,6 +49,7 @@ class SeoPost {
   final String summary;
   final String imageUrl;
   final String categoryId;
+  final List<String> tags;
   final DateTime? created;
   final DateTime? updated;
 
@@ -139,6 +142,14 @@ SeoPost postFromRest(Map<String, dynamic> doc) {
     summary: summarize(prose),
     imageUrl: cover,
     categoryId: _string(fields, 'category_id'),
+    tags: normalizeTags([
+      for (final value
+          in ((fields['tags'] as Map?)?['arrayValue'] as Map?)?['values']
+                  as List? ??
+              const [])
+        if ((value as Map)['stringValue'] != null)
+          value['stringValue'].toString(),
+    ]),
     created: _time(fields, 'time_created'),
     updated: _time(fields, 'time_updated'),
   );
@@ -152,6 +163,30 @@ SeoCategory categoryFromRest(Map<String, dynamic> doc) {
     description: _string(fields, 'description').trim(),
     visible: _bool(fields, 'visible') ?? true,
   );
+}
+
+/// Các thẻ đang được dùng bởi [posts]: slug -> (nhãn của lần dùng đầu, bài
+/// mới nhất có thẻ). Thứ tự theo lần xuất hiện đầu trong [posts].
+Map<String, ({String label, DateTime? lastModified})> collectTags(
+  List<SeoPost> posts,
+) {
+  final result = <String, ({String label, DateTime? lastModified})>{};
+  for (final post in posts) {
+    final when = post.updated ?? post.created;
+    for (final tag in post.tags) {
+      final slug = tagSlug(tag);
+      final existing = result[slug];
+      if (existing == null) {
+        result[slug] = (label: tag, lastModified: when);
+        continue;
+      }
+      final previous = existing.lastModified;
+      if (when != null && (previous == null || when.isAfter(previous))) {
+        result[slug] = (label: existing.label, lastModified: when);
+      }
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +229,7 @@ String articleJsonLd(SeoPost post) {
     'url': meta.canonicalUrl,
     'mainEntityOfPage': meta.canonicalUrl,
     if (post.imageUrl.isNotEmpty) 'image': post.imageUrl,
+    if (post.tags.isNotEmpty) 'keywords': post.tags.join(', '),
     if (post.created != null)
       'datePublished': post.created!.toUtc().toIso8601String(),
     if ((post.updated ?? post.created) != null)

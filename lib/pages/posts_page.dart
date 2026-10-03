@@ -9,6 +9,7 @@ import '../services/post_service.dart';
 import '../theme.dart';
 import '../utils/post_search.dart';
 import '../utils/post_slug.dart';
+import '../utils/post_tags.dart' as tags;
 import '../utils/seo.dart';
 import '../widgets/publication_chrome.dart';
 
@@ -19,6 +20,7 @@ class PostsPage extends StatefulWidget {
     super.key,
     this.showBackButton = false,
     this.categorySlug,
+    this.tagSlug,
     this.initialQuery = '',
     @visibleForTesting this.postsStream,
     @visibleForTesting this.categoriesStream,
@@ -26,6 +28,9 @@ class PostsPage extends StatefulWidget {
 
   final bool showBackButton;
   final String? categorySlug;
+
+  /// Lọc theo thẻ (slug, vd `flutter-web`) — route `/tags/:slug`.
+  final String? tagSlug;
 
   /// Từ khóa ban đầu lấy từ `?q=` để link tìm kiếm mở ra đã lọc sẵn.
   final String initialQuery;
@@ -106,7 +111,12 @@ class _PostsPageState extends State<PostsPage> {
                             (post) =>
                                 post.published &&
                                 (selected == null ||
-                                    post.categoryId == selected.id),
+                                    post.categoryId == selected.id) &&
+                                (widget.tagSlug == null ||
+                                    post.tags.any(
+                                      (tag) =>
+                                          tags.tagSlug(tag) == widget.tagSlug,
+                                    )),
                           )
                           .toList(growable: false);
                       // Lọc nháp TRƯỚC rồi mới tìm, để từ khóa không bao
@@ -123,6 +133,7 @@ class _PostsPageState extends State<PostsPage> {
                         posts: posts,
                         categories: categories,
                         selected: selected,
+                        tagLabel: _tagLabel(visible),
                       );
                     },
                   );
@@ -143,20 +154,43 @@ class _PostsPageState extends State<PostsPage> {
     return null;
   }
 
+  /// Nhãn hiển thị của thẻ đang lọc, lấy từ bài đầu tiên có thẻ đó (slug
+  /// không đủ dấu để hiển thị). Không bài nào có thẻ -> dùng slug.
+  String? _tagLabel(List<Post> posts) {
+    final slug = widget.tagSlug;
+    if (slug == null) return null;
+    for (final post in posts) {
+      for (final tag in post.tags) {
+        if (tags.tagSlug(tag) == slug) return tag;
+      }
+    }
+    return slug;
+  }
+
   Widget _archive({
     required List<Post> posts,
     required List<PostCategory> categories,
     required PostCategory? selected,
+    required String? tagLabel,
   }) {
     final categoryById = {
       for (final category in categories) category.id: category,
     };
     // Trang kết quả tìm kiếm vẫn canonical về trang danh sách gốc.
+    final heading = tagLabel != null
+        ? '#$tagLabel'
+        : selected?.name ?? 'Tất cả bài viết';
     PageMeta.set(
       SeoMeta(
-        path: selected == null ? '/posts' : '/categories/${selected.slug}',
-        title: selected?.name ?? 'Tất cả bài viết',
-        description: selected?.description.isNotEmpty == true
+        path: tagLabel != null
+            ? '/tags/${widget.tagSlug}'
+            : selected == null
+            ? '/posts'
+            : '/categories/${selected.slug}',
+        title: heading,
+        description: tagLabel != null
+            ? tagDescription(tagLabel)
+            : selected?.description.isNotEmpty == true
             ? selected!.description
             : archiveDescription,
       ),
@@ -183,7 +217,7 @@ class _PostsPageState extends State<PostsPage> {
                       ),
                     const SizedBox(height: 30),
                     Text(
-                      selected?.name ?? 'Tất cả bài viết',
+                      heading,
                       style: TextStyle(
                         fontFamily: AppTheme.serifFont,
                         fontSize: MediaQuery.sizeOf(context).width < 640
@@ -199,7 +233,9 @@ class _PostsPageState extends State<PostsPage> {
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 620),
                       child: Text(
-                        selected?.description.isNotEmpty == true
+                        tagLabel != null
+                            ? tagDescription(tagLabel)
+                            : selected?.description.isNotEmpty == true
                             ? selected!.description
                             : archiveDescription,
                         style: TextStyle(
@@ -211,7 +247,11 @@ class _PostsPageState extends State<PostsPage> {
                       ),
                     ),
                     const SizedBox(height: 42),
-                    _CategoryIndex(categories: categories, selected: selected),
+                    _CategoryIndex(
+                      categories: categories,
+                      selected: selected,
+                      allSelected: selected == null && tagLabel == null,
+                    ),
                     const SizedBox(height: 28),
                     _SearchField(
                       controller: _search,
@@ -246,10 +286,15 @@ class _PostsPageState extends State<PostsPage> {
 }
 
 class _CategoryIndex extends StatelessWidget {
-  const _CategoryIndex({required this.categories, this.selected});
+  const _CategoryIndex({
+    required this.categories,
+    required this.allSelected,
+    this.selected,
+  });
 
   final List<PostCategory> categories;
   final PostCategory? selected;
+  final bool allSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -268,7 +313,7 @@ class _CategoryIndex extends StatelessWidget {
         children: [
           _CategoryLink(
             label: 'Tất cả',
-            selected: selected == null,
+            selected: allSelected,
             onTap: () => context.go('/posts'),
           ),
           for (final category in categories)

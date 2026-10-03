@@ -64,6 +64,19 @@ void main() {
       expect(_ids(searchPosts(posts, 'flutter')), ['a', 'b', 'd']);
     });
 
+    test('khớp theo thẻ', () {
+      final tagged = Post(
+        id: 't',
+        title: 'Không liên quan',
+        published: true,
+        tags: const ['Đời sống'],
+        blocks: const [],
+        timeCreated: null,
+        timeUpdated: null,
+      );
+      expect(_ids(searchPosts([...posts, tagged], 'doi song')), ['t']);
+    });
+
     test('khớp theo tên danh mục', () {
       expect(
         _ids(

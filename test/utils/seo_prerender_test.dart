@@ -84,6 +84,48 @@ void main() {
     });
   });
 
+  group('tags', () {
+    Map<String, dynamic> withTags(String id, List<String> tags, String time) {
+      final doc = _restPost(id: id, title: id);
+      final fields = doc['fields'] as Map<String, dynamic>;
+      fields['tags'] = {
+        'arrayValue': {
+          'values': [
+            for (final t in tags) {'stringValue': t},
+          ],
+        },
+      };
+      fields['time_created'] = {'timestampValue': time};
+      return doc;
+    }
+
+    test('đọc tags từ REST, chuẩn hóa và đưa vào JSON-LD keywords', () {
+      final post = postFromRest(
+        withTags('a', ['Flutter', ' flutter', 'Web'], '2026-10-01T00:00:00Z'),
+      );
+      expect(post.tags, ['Flutter', 'Web']);
+      final data = jsonDecode(articleJsonLd(post)) as Map;
+      expect(data['keywords'], 'Flutter, Web');
+      expect(
+        (jsonDecode(articleJsonLd(postFromRest(_restPost()))) as Map)
+            .containsKey('keywords'),
+        isFalse,
+      );
+    });
+
+    test('collectTags gộp theo slug, giữ nhãn đầu và ngày mới nhất', () {
+      final tags = collectTags([
+        postFromRest(withTags('a', ['Flutter Web'], '2026-09-01T00:00:00Z')),
+        postFromRest(
+          withTags('b', ['flutter web', 'Đà Lạt'], '2026-09-20T00:00:00Z'),
+        ),
+      ]);
+      expect(tags.keys, ['flutter-web', 'da-lat']);
+      expect(tags['flutter-web']!.label, 'Flutter Web');
+      expect(tags['flutter-web']!.lastModified, DateTime.utc(2026, 9, 20));
+    });
+  });
+
   group('applySeo', () {
     final post = postFromRest(
       _restPost(

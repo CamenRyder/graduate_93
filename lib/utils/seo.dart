@@ -19,6 +19,9 @@ const String archiveDescription =
     'Những bài viết dài, ghi chú kỹ thuật và điều mình học được trong quá '
     'trình xây dựng sản phẩm.';
 
+/// Mô tả trang thẻ `/tags/<slug>`.
+String tagDescription(String tag) => 'Các bài viết gắn thẻ $tag.';
+
 /// Bộ meta của một trang.
 class SeoMeta {
   const SeoMeta({

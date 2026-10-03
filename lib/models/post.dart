@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../utils/post_tags.dart';
+
 /// Loại khối nội dung trong 1 bài viết.
 enum PostBlockType {
   /// Đề mục lớn (chữ to, in đậm).
@@ -108,6 +110,7 @@ class Post {
     required this.timeCreated,
     required this.timeUpdated,
     this.categoryId = '',
+    this.tags = const [],
   });
 
   /// ID của document (Firestore tự sinh).
@@ -121,6 +124,10 @@ class Post {
 
   /// ID/slug của danh mục chính. Rỗng = bài cũ hoặc chưa phân loại.
   final String categoryId;
+
+  /// Thẻ của bài (nhãn hiển thị, đã chuẩn hóa — xem [normalizeTags]). Rỗng =
+  /// bài cũ hoặc không gắn thẻ.
+  final List<String> tags;
 
   /// Danh sách khối nội dung theo đúng thứ tự hiển thị.
   final List<PostBlock> blocks;
@@ -137,6 +144,10 @@ class Post {
       title: data['title']?.toString() ?? '',
       published: data['published'] as bool? ?? false,
       categoryId: data['category_id']?.toString() ?? '',
+      tags: normalizeTags([
+        for (final tag in data['tags'] as List? ?? const [])
+          if (tag != null) tag.toString(),
+      ]),
       blocks: [
         for (final b in rawBlocks)
           if (b is Map) PostBlock.fromMap(Map<String, dynamic>.from(b)),
@@ -155,6 +166,8 @@ class Post {
       // Luôn ghi field này để thao tác "Chưa phân loại" có thể xóa liên kết
       // category cũ khi update document.
       'category_id': categoryId,
+      // Luôn ghi (kể cả rỗng) để gỡ hết thẻ thì giá trị cũ không còn sót.
+      'tags': normalizeTags(tags),
       'blocks': [for (final b in blocks) b.toMap()],
     };
   }

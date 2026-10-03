@@ -28,6 +28,7 @@ import 'pages/welcome_page.dart';
 ///  - `/posts`     : kho bài viết đã đăng (`?q=` = từ khóa tìm kiếm)
 ///  - `/posts/:id/:slug` : đọc chi tiết 1 bài viết đã đăng
 ///  - `/categories/:slug` : danh sách bài viết theo danh mục
+///  - `/tags/:slug` : danh sách bài viết theo thẻ
 ///  - `/auth`      : xác thực khách mời (nhập code + số điện thoại)
 ///  - `/countdown` : trang đếm ngược đến sự kiện
 ///  - `/login`     : đăng nhập admin
@@ -146,6 +147,14 @@ final router = GoRouter(
       path: '/categories/:slug',
       builder: (context, state) => PostsPage(
         categorySlug: state.pathParameters['slug'],
+        showBackButton: true,
+        initialQuery: state.uri.queryParameters['q'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/tags/:slug',
+      builder: (context, state) => PostsPage(
+        tagSlug: state.pathParameters['slug'],
         showBackButton: true,
         initialQuery: state.uri.queryParameters['q'] ?? '',
       ),
