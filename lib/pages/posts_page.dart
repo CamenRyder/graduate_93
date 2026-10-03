@@ -11,6 +11,7 @@ import '../utils/post_search.dart';
 import '../utils/post_slug.dart';
 import '../utils/seo.dart';
 import '../widgets/publication_chrome.dart';
+import '../widgets/scroll_reveal.dart';
 
 /// Kho bài viết công khai, trình bày như mục lục của một ấn phẩm thay vì lưới
 /// thẻ. Bản nháp luôn bị loại khỏi luồng công khai.
@@ -211,7 +212,12 @@ class _PostsPageState extends State<PostsPage> {
                       ),
                     ),
                     const SizedBox(height: 42),
-                    _CategoryIndex(categories: categories, selected: selected),
+                    ScrollReveal(
+                      child: _CategoryIndex(
+                        categories: categories,
+                        selected: selected,
+                      ),
+                    ),
                     const SizedBox(height: 28),
                     _SearchField(
                       controller: _search,
@@ -228,9 +234,11 @@ class _PostsPageState extends State<PostsPage> {
                       _EmptyArchive(query: _query)
                     else
                       for (final post in posts)
-                        _ArchiveRow(
-                          post: post,
-                          category: categoryById[post.categoryId],
+                        ScrollReveal(
+                          child: _ArchiveRow(
+                            post: post,
+                            category: categoryById[post.categoryId],
+                          ),
                         ),
                     const SizedBox(height: 96),
                     const PublicationFooter(),

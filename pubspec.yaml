@@ -63,8 +63,26 @@ flutter:
   # For details regarding adding assets from package dependencies, see
   # https://flutter.dev/to/asset-from-package
 
-  # Font chữ monospace dùng cho toàn bộ web (theo thiết kế).
+  # Bộ chữ của ấn phẩm (giấy phép OFL, xem assets/fonts/OFL-*.txt):
+  #  - Newsreader: serif cho tiêu đề + nội dung bài (font biến thiên, CanvasKit
+  #    tự map fontWeight sang trục wght).
+  #  - Be Vietnam Pro: sans cho giao diện, quản trị và trình soạn.
+  #  - JetBrains Mono: metadata, điều hướng nhỏ và code.
   fonts:
+    - family: Newsreader
+      fonts:
+        - asset: assets/fonts/Newsreader-Variable.ttf
+        - asset: assets/fonts/Newsreader-Italic-Variable.ttf
+          style: italic
+    - family: Be Vietnam Pro
+      fonts:
+        - asset: assets/fonts/BeVietnamPro-Regular.ttf
+        - asset: assets/fonts/BeVietnamPro-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/BeVietnamPro-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/BeVietnamPro-Bold.ttf
+          weight: 700
     - family: JetBrains Mono
       fonts:
         - asset: assets/fonts/JetBrainsMono-Regular.ttf
